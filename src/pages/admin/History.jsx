@@ -1,54 +1,143 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { useSearchParams } from "react-router";
 import { usePageTitle } from "@hooks";
 import { HistoryIcon } from "@components/atoms/icons";
 import { PageHeader, SearchBox, Pagination } from "@components/molecules";
-import { formatRupiah } from "@utils";
+import { api, normalizeHistoryTransaction } from "@utils";
 import { profile } from "@/assets/images";
 
 const PER_PAGE = 5;
 
+const getPageFromParams = (searchParams) => {
+  const page = Number(searchParams.get("page") ?? "1");
+  return Number.isInteger(page) && page > 0 ? page : 1;
+};
+
 function History() {
   usePageTitle("History");
 
-  const { users } = useSelector((state) => state.users);
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
-
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
-  const [currentPage, setCurrentPage] = useState(1);
+  const currentPage = getPageFromParams(searchParams);
+  const requestKey = userLoggedIn?.token
+    ? `${userLoggedIn.token}:${query}:${currentPage}`
+    : "";
 
-  const history =
-    userLoggedIn?.history?.map((item) => {
-      const user = users.find((u) => u.id === item.userId);
-      return {
-        ...item,
-        name: item.name || (user ? user.name : "Unknown"),
-      };
-    }) || [];
-  const filtered =
-    history?.filter((item) => {
-      const q = query.toLowerCase().trim();
-      return (
-        item.name.toLowerCase().includes(q) ||
-        item.type.toLowerCase().includes(q)
-      );
-    }) || [];
+  const [historyState, setHistoryState] = useState({
+    key: "",
+    history: {
+      items: [],
+      meta: {
+        page: 1,
+        limit: PER_PAGE,
+        total: 0,
+        total_pages: 0,
+      },
+    },
+    error: "",
+  });
 
-  // Pagination slice dari hasil filter
-  const paginated = filtered.slice(
-    (currentPage - 1) * PER_PAGE,
-    currentPage * PER_PAGE,
-  );
+  useEffect(() => {
+    if (!userLoggedIn?.token) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isCurrent = true;
+
+    api
+      .get("/transaction/history", {
+        params: {
+          q: query,
+          page: currentPage,
+          limit: PER_PAGE,
+        },
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${userLoggedIn.token}`,
+        },
+      })
+      .then((response) => {
+        if (!isCurrent) {
+          return;
+        }
+
+        setHistoryState({
+          key: requestKey,
+          history: response.data ?? {
+            items: [],
+            meta: {
+              page: currentPage,
+              limit: PER_PAGE,
+              total: 0,
+              total_pages: 0,
+            },
+          },
+          error: "",
+        });
+      })
+      .catch((err) => {
+        if (!isCurrent || err.name === "CanceledError") {
+          return;
+        }
+
+        setHistoryState({
+          key: requestKey,
+          history: {
+            items: [],
+            meta: {
+              page: currentPage,
+              limit: PER_PAGE,
+              total: 0,
+              total_pages: 0,
+            },
+          },
+          error: err.data?.message || "Failed to load transaction history.",
+        });
+      });
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [currentPage, query, requestKey, userLoggedIn?.token]);
 
   const handleSearch = (e) => {
     const value = e.target.value;
-    // Update URL search param ?q=...
-    setSearchParams(value ? { q: value } : {}, { replace: true });
-    // Reset ke halaman 1 saat query berubah
-    setCurrentPage(1);
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (value) {
+      nextParams.set("q", value);
+    } else {
+      nextParams.delete("q");
+    }
+
+    nextParams.delete("page");
+    setSearchParams(nextParams, { replace: true });
   };
+
+  const handlePageChange = (page) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (page > 1) {
+      nextParams.set("page", String(page));
+    } else {
+      nextParams.delete("page");
+    }
+
+    setSearchParams(nextParams);
+  };
+
+  const history = historyState.history;
+  const total = history.meta?.total ?? 0;
+  const transactions = history.items ?? [];
+  const isLoading =
+    Boolean(userLoggedIn?.token) && historyState.key !== requestKey;
+  const error = userLoggedIn?.token
+    ? historyState.error
+    : "Please login again to load transaction history.";
 
   return (
     <main className="page-main md:col-span-1 lg:col-span-2">
@@ -59,15 +148,14 @@ function History() {
 
       <section>
         <div className="card p-4 sm:p-8">
-          <div className="flex flex-col items-start gap-4 mb-6 sm:flex-row sm:justify-between sm:items-center">
+          <div className="mb-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-lg font-semibold text-neutral-800">
                 Find Transaction
               </h3>
               {query && (
                 <p className="mt-1 text-sm text-gray-500">
-                  {filtered.length} result{filtered.length !== 1 ? "s" : ""} for
-                  &ldquo;
+                  {total} result{total !== 1 ? "s" : ""} for &ldquo;
                   <span className="font-medium text-neutral-800">{query}</span>
                   &rdquo;
                 </p>
@@ -82,81 +170,58 @@ function History() {
           </div>
 
           <div className="flex flex-col">
-            {paginated.length > 0 ? (
-              paginated.map((item, index) => (
-                <div
-                  key={item.name}
-                  className={`flex items-center gap-3 py-3 px-2 border-b border-gray-200 transition-colors duration-150 sm:py-4 sm:px-4 sm:gap-5 ${index % 2 !== 0 ? "bg-gray-50" : ""} last:border-b-0`}
-                >
-                  <img
-                    src={item.avatar || profile}
-                    alt={item.name}
-                    className="shrink-0 object-cover w-10 h-10 rounded-lg sm:w-11 sm:h-11"
-                  />
-                  <span className="flex-1 font-medium text-base text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
-                    {item.name}
-                  </span>
-                  <span className="hidden flex-1 text-sm text-gray-500 sm:block">
-                    {item.phone ?? item.type}
-                  </span>
-                  <span
-                    className={`font-semibold text-sm whitespace-nowrap ${item.type === "top-up" ? "text-green-500" : "text-red-500"}`}
+            {isLoading ? (
+              <div className="py-16 text-center text-sm font-medium text-gray-500">
+                Loading transaction history...
+              </div>
+            ) : error ? (
+              <div className="py-16 text-center text-sm font-medium text-red-500">
+                {error}
+              </div>
+            ) : transactions.length > 0 ? (
+              transactions.map((transaction, index) => {
+                const item = normalizeHistoryTransaction(transaction);
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-3 border-b border-gray-200 px-2 py-3 transition-colors duration-150 sm:gap-5 sm:px-4 sm:py-4 ${index % 2 !== 0 ? "bg-gray-50" : ""} last:border-b-0`}
                   >
-                    {formatRupiah(item.amount)}
-                  </span>
-                  <button
-                    className="flex items-center justify-center shrink-0 p-1.5 transition-colors rounded-md hover:bg-red-100"
-                    title="Delete"
-                  >
-                    <svg
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="w-4.5 h-4.5"
+                    <img
+                      src={item.photo || profile}
+                      alt={item.name}
+                      className="h-10 w-10 shrink-0 rounded-lg object-cover sm:h-11 sm:w-11"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-medium text-gray-500">
+                        {item.name}
+                      </span>
+                      <span className="block text-xs text-gray-400 sm:hidden">
+                        {item.subtitle}
+                      </span>
+                    </div>
+                    <span className="hidden flex-1 text-sm text-gray-500 sm:block">
+                      {item.subtitle}
+                    </span>
+                    <span
+                      className={`hidden rounded-md px-2 py-1 text-xs font-semibold capitalize sm:inline-block ${
+                        item.status === "failed"
+                          ? "bg-amber-50 text-amber-600"
+                          : "bg-emerald-50 text-emerald-600"
+                      }`}
                     >
-                      <path
-                        d="M20.25 5.25L3.75 5.25001"
-                        stroke="#4F5665"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M9.75 9.75V15.75"
-                        stroke="#D00000"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M14.25 9.75V15.75"
-                        stroke="#D00000"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M18.75 5.25V19.5C18.75 19.6989 18.671 19.8897 18.5303 20.0303C18.3897 20.171 18.1989 20.25 18 20.25H6C5.80109 20.25 5.61032 20.171 5.46967 20.0303C5.32902 19.8897 5.25 19.6989 5.25 19.5V5.25"
-                        stroke="#D00000"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M15.75 5.25V3.75C15.75 3.35218 15.592 2.97064 15.3107 2.68934C15.0294 2.40804 14.6478 2.25 14.25 2.25H9.75C9.35218 2.25 8.97064 2.40804 8.68934 2.68934C8.40804 2.97064 8.25 3.35218 8.25 3.75V5.25"
-                        stroke="#D00000"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              ))
+                      {item.status}
+                    </span>
+                    <span
+                      className={`text-sm font-semibold whitespace-nowrap ${item.amountClass}`}
+                    >
+                      {item.amountLabel}
+                    </span>
+                  </div>
+                );
+              })
             ) : (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
                 <svg
                   width="48"
                   height="48"
@@ -189,17 +254,19 @@ function History() {
                   />
                 </svg>
                 <p className="text-sm font-medium">
-                  No results for &ldquo;{query}&rdquo;
+                  {query
+                    ? `No results for "${query}"`
+                    : "No transaction history yet."}
                 </p>
               </div>
             )}
           </div>
 
           <Pagination
-            total={filtered.length}
+            total={total}
             perPage={PER_PAGE}
             current={currentPage}
-            onChange={setCurrentPage}
+            onChange={handlePageChange}
           />
         </div>
       </section>
