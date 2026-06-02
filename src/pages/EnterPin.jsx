@@ -10,30 +10,52 @@ import { Button } from "@components/atoms";
 import { usePageTitle } from "@hooks";
 
 import { userLoginAction } from "@redux/slices/userLogin";
-import { usersAction } from "@redux/slices/userRegistered";
+import { api } from "@utils";
 
 const EnterPin = () => {
   usePageTitle("Enter Pin");
   const [pin, setPin] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (pin.length === 6) {
-      dispatch(usersAction.updatePin({ id: userLoggedIn.id, pin }));
-      dispatch(userLoginAction.updated({ ...userLoggedIn, pin }));
-      toast.success("Pin set successfully!");
-
-      setTimeout(() => {
-        navigate("/admin");
-      }, 1000);
+    if (!userLoggedIn?.token) {
+      toast.error("You must be logged in to set your pin");
+      navigate("/login", { replace: true });
       return;
     }
 
-    toast.error("Pin must be 6 digits long");
+    if (!/^\d{6}$/.test(pin)) {
+      toast.error("Pin must be 6 digits long");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await api.patch(
+        "/users/me/pin",
+        { pin },
+        {
+          headers: {
+            Authorization: `Bearer ${userLoggedIn.token}`,
+          },
+        },
+      );
+
+      dispatch(userLoginAction.updated({ hasPin: true }));
+      toast.success("Pin set successfully!");
+      navigate("/admin", { replace: true });
+    } catch (error) {
+      const responseData = error.response?.data || error.data;
+      toast.error(responseData?.message || "Failed to set pin");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePinChange = (pinChange) => {
@@ -53,7 +75,9 @@ const EnterPin = () => {
       <form className="flex flex-col mt-2 sm:mt-4" onSubmit={handleSubmit}>
         <PinInput length={6} callbackForm={handlePinChange} />
 
-        <Button type="submit">Submit</Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Submitting..." : "Submit"}
+        </Button>
       </form>
     </AuthLayout>
   );

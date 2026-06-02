@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { PinInput } from "@components/molecules";
 import { useLoadSpinner } from "@hooks";
+import { api } from "@utils";
 
 import { usersAction } from "@redux/slices/userRegistered";
 import { userLoginAction } from "@redux/slices/userLogin";
@@ -17,9 +18,25 @@ function PinModal({ isOpen, onNext, onFailed, user }) {
     setPin(pinChange);
   };
 
-  const handleCheckPin = () => {
+  const handleCheckPin = async () => {
+    if (!userLogin?.token || !/^\d{6}$/.test(pin)) {
+      onFailed();
+      return;
+    }
+
     toggleSpinner();
-    if (pin === userLogin.pin) {
+
+    try {
+      await api.post(
+        "/users/me/pin/check",
+        { pin },
+        {
+          headers: {
+            Authorization: `Bearer ${userLogin.token}`,
+          },
+        },
+      );
+
       onNext();
 
       const updateTransactionHistory = {
@@ -44,7 +61,7 @@ function PinModal({ isOpen, onNext, onFailed, user }) {
           ],
         }),
       );
-    } else {
+    } catch {
       onFailed();
     }
   };
@@ -53,7 +70,7 @@ function PinModal({ isOpen, onNext, onFailed, user }) {
     <div className="fixed inset-0 flex items-center justify-center w-full h-full p-4 bg-black/50 z-1000">
       <div className="w-full max-w-112.5 overflow-hidden bg-white shadow-2xl rounded-2xl">
         <div className="p-5 font-semibold tracking-wide uppercase border-b sm:p-6 border-neutral-200 text-[0.8rem] text-neutral-800">
-          TRANSFER TO {user.name}
+          TRANSFER TO {user.transferTo?.name || "Recipient"}
         </div>
 
         <div className="p-6 sm:py-8 sm:px-10">

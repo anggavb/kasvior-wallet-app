@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 
 import { AuthLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -15,10 +16,37 @@ import {
 } from "@components/atoms/icons";
 import { usePageTitle, useRedirectIfLoggedIn } from "@hooks";
 import { userLoginAction } from "@redux/slices/userLogin";
+import { api } from "@utils";
+
+const normalizeAuthUser = (user) => ({
+  id: user.id,
+  email: user.email,
+  name: user.fullname || "",
+  phone: user.phone_number || "",
+  avatar: user.photo || "",
+  isVerified: Boolean(user.is_verified),
+  hasPin: Boolean(user.has_pin),
+  token: user.token,
+});
+
+const getLoginErrorMessage = (error) => {
+  const responseData = error.response?.data || error.data;
+
+  if (responseData?.message) {
+    return responseData.message;
+  }
+
+  if (responseData?.errors) {
+    return Object.values(responseData.errors).filter(Boolean).join(", ");
+  }
+
+  return "Invalid email or password";
+};
 
 const Login = () => {
   usePageTitle("Login");
   useRedirectIfLoggedIn();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
     register,
@@ -26,27 +54,34 @@ const Login = () => {
     formState: { errors },
   } = useForm();
 
-  const { users } = useSelector((state) => state.users);
   const dispatch = useDispatch();
 
   const navigate = useNavigate();
-  const handleLogin = (data) => {
-    const user = users.find(
-      (user) => user.email === data.email && user.password === data.password,
-    );
-    if (data && user) {
-      dispatch(userLoginAction.login(user));
-      if (!user.pin || user.pin === "") {
+  const handleLogin = async (data) => {
+    setIsSubmitting(true);
+
+    try {
+      const response = await api.post("/auth", {
+        email: data.email,
+        password: data.password,
+      });
+      const loggedInUser = normalizeAuthUser(response.data);
+
+      dispatch(userLoginAction.login(loggedInUser));
+
+      if (!loggedInUser.hasPin) {
         navigate("/enter-pin", { replace: true });
         toast.info("Please set your pin for better experience!");
         return;
       }
-      navigate("/admin", { replace: true });
-      toast.success(`Welcome back, ${user.name}!`);
-      return;
-    }
 
-    toast.error("Invalid email or password");
+      navigate("/admin", { replace: true });
+      toast.success(`Welcome back, ${loggedInUser.name || loggedInUser.email}!`);
+    } catch (error) {
+      toast.error(getLoginErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -111,7 +146,9 @@ const Login = () => {
           </span>
         )}
 
-        <Button type="submit">Login</Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Logging in..." : "Login"}
+        </Button>
       </form>
 
       <nav className="mt-2 text-[0.95rem] text-center text-gray-500 flex flex-col gap-1.5 sm:mt-4">

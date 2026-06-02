@@ -37,7 +37,7 @@ function TransferDetail() {
   const transferTo = users.find((usr) => usr.id === parseInt(userId));
 
   const handleTransfer = (data) => {
-    setFormTransfer({ id: user.id, pin: user.pin, data, transferTo });
+    setFormTransfer({ id: user.id, data, transferTo });
     setTimeout(() => {
       setPinModal(true);
     }, 500);

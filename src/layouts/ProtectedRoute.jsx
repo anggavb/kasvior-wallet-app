@@ -6,11 +6,21 @@ const ProtectedRoute = ({ children, userLoggedIn }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!userLoggedIn) {
+    if (!userLoggedIn?.token) {
       toast.error("You must be logged in to access this page");
-      navigate("/");
+      navigate("/login", { replace: true });
+      return;
     }
-  }, [navigate, userLoggedIn, children]);
+
+    if (!userLoggedIn.hasPin) {
+      toast.info("Please set your pin for better experience!");
+      navigate("/enter-pin", { replace: true });
+    }
+  }, [navigate, userLoggedIn]);
+
+  if (!userLoggedIn?.token || !userLoggedIn.hasPin) {
+    return null;
+  }
 
   return children;
 };
