@@ -11,7 +11,7 @@
  */
 function Pagination({ total, perPage, current, onChange }) {
   const totalPages = Math.ceil(total / perPage);
-  const startItem = (current - 1) * perPage + 1;
+  const startItem = total === 0 ? 0 : (current - 1) * perPage + 1;
   const endItem = Math.min(current * perPage, total);
 
   const handlePage = (page) => {
@@ -20,7 +20,7 @@ function Pagination({ total, perPage, current, onChange }) {
   };
 
   return (
-    <div className="flex flex-col items-start gap-4 mt-6 sm:flex-row sm:justify-between sm:items-center">
+    <div className="mt-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
       <span className="text-sm text-gray-500">
         Show {startItem}–{endItem} of {total} History
       </span>
@@ -28,7 +28,7 @@ function Pagination({ total, perPage, current, onChange }) {
         <button
           onClick={() => handlePage(current - 1)}
           disabled={current === 1}
-          className="px-3 py-1.5 rounded-md text-sm font-semibold text-neutral-800 transition-all duration-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-md px-3 py-1.5 text-sm font-semibold text-neutral-800 transition-all duration-200 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Prev
         </button>
@@ -37,9 +37,9 @@ function Pagination({ total, perPage, current, onChange }) {
           <button
             key={page}
             onClick={() => handlePage(page)}
-            className={`min-w-8 px-2.5 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
+            className={`min-w-8 rounded-md px-2.5 py-1.5 text-sm font-medium transition-all duration-200 ${
               page === current
-                ? "text-white bg-blue-600 font-semibold"
+                ? "bg-blue-600 font-semibold text-white"
                 : "text-gray-500 hover:bg-gray-100 hover:text-neutral-800"
             }`}
           >
@@ -49,8 +49,8 @@ function Pagination({ total, perPage, current, onChange }) {
 
         <button
           onClick={() => handlePage(current + 1)}
-          disabled={current === totalPages}
-          className="px-3 py-1.5 rounded-md text-sm font-semibold text-neutral-800 transition-all duration-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={totalPages === 0 || current === totalPages}
+          className="rounded-md px-3 py-1.5 text-sm font-semibold text-neutral-800 transition-all duration-200 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next
         </button>
