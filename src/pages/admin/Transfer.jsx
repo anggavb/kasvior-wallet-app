@@ -1,18 +1,97 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useSelector } from "react-redux";
 import { usePageTitle } from "@hooks";
 import { TransferIcon } from "@components/atoms/icons";
 import { PageHeader, SearchBox, Stepper } from "@components/molecules";
 import { useLoadSpinner } from "@hooks";
+import { api, getApiAssetUrl } from "@utils";
 import { profile } from "@/assets/images";
 
 const TRANSFER_STEPS = ["Find People", "Set Nominal", "Finish"];
 
+const buildDetailPath = (receiver) => {
+  const params = new URLSearchParams({
+    walletId: receiver.wallet_id,
+    name: receiver.receiver || "Unknown User",
+  });
+
+  if (receiver.phone_number) {
+    params.set("phone", receiver.phone_number);
+  }
+
+  if (receiver.photo) {
+    params.set("photo", receiver.photo);
+  }
+
+  return `detail?${params.toString()}`;
+};
+
 function Transfer() {
   usePageTitle("Transfer");
   const toggleSpinner = useLoadSpinner();
-  const { users } = useSelector((state) => state.users);
   const { user } = useSelector((state) => state.userLogin);
+  const [search, setSearch] = useState("");
+  const receiverRequestKey = user?.token ? `${user.token}:${search}` : "";
+  const [receiverState, setReceiverState] = useState({
+    key: "",
+    items: [],
+    error: "",
+  });
+
+  useEffect(() => {
+    if (!user?.token) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isCurrent = true;
+
+    api
+      .get("/transaction/transfer/receivers", {
+        params: {
+          search,
+          page: 1,
+          limit: 20,
+        },
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      })
+      .then((response) => {
+        if (!isCurrent) {
+          return;
+        }
+
+        setReceiverState({
+          key: receiverRequestKey,
+          items: response.data?.items ?? [],
+          error: "",
+        });
+      })
+      .catch((err) => {
+        if (!isCurrent || err.name === "CanceledError") {
+          return;
+        }
+
+        setReceiverState({
+          key: receiverRequestKey,
+          items: [],
+          error: err.data?.message || "Failed to load receivers.",
+        });
+      });
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [receiverRequestKey, search, user?.token]);
+
+  const receivers = receiverState.items;
+  const isLoading =
+    Boolean(user?.token) && receiverState.key !== receiverRequestKey;
+  const error = receiverState.error;
 
   return (
     <main className="page-main md:col-span-1 lg:col-span-2">
@@ -24,50 +103,65 @@ function Transfer() {
       <Stepper steps={TRANSFER_STEPS} activeStep={0} />
 
       <section>
-        <div className="p-4 bg-white border border-gray-200 rounded-xl sm:p-8">
-          <div className="flex flex-col items-start gap-6 mb-8 sm:flex-row sm:justify-between sm:items-center">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-8">
+          <div className="mb-8 flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-lg font-semibold text-neutral-800">
                 Find People
               </h3>
-              <p className="text-sm text-gray-500 mt-1">
-                8 Result Found For Ghaluh
+              <p className="mt-1 text-sm text-gray-500">
+                {receivers.length} Result{receivers.length !== 1 ? "s" : ""}{" "}
+                Found
               </p>
             </div>
             <SearchBox
               placeholder="Enter Number Or Full Name"
               className="w-full sm:w-62.5 md:w-75"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
           <div className="flex flex-col">
-            {users
-              .filter((usr) => usr.id !== user.id)
-              .map((person, index) => (
+            {isLoading ? (
+              <div className="py-12 text-center text-sm font-medium text-gray-500">
+                Loading receivers...
+              </div>
+            ) : error ? (
+              <div className="py-12 text-center text-sm font-medium text-red-500">
+                {error}
+              </div>
+            ) : receivers.length > 0 ? (
+              receivers.map((person, index) => (
                 <Link
-                  to={`detail?userId=${person.id}`}
+                  to={buildDetailPath(person)}
                   onClick={toggleSpinner}
-                  key={index}
-                  className="block group"
+                  key={person.wallet_id}
+                  className="group block"
                 >
                   <div
-                    className={`flex items-center px-3 py-3 gap-3 sm:px-4 sm:py-4 sm:gap-4 md:gap-8 transition-colors rounded-lg group-hover:bg-gray-50 ${index % 2 !== 0 ? "bg-gray-50" : ""}`}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-3 transition-colors group-hover:bg-gray-50 sm:gap-4 sm:px-4 sm:py-4 md:gap-8 ${index % 2 !== 0 ? "bg-gray-50" : ""}`}
                   >
                     <img
-                      src={person.avatar || profile}
-                      alt="User"
-                      className="object-cover rounded-lg w-9 h-9 sm:w-11 sm:h-11"
+                      src={getApiAssetUrl(person.photo) || profile}
+                      alt={person.receiver || "User"}
+                      className="h-9 w-9 rounded-lg object-cover sm:h-11 sm:w-11"
                     />
                     <span className="flex-1 font-medium text-gray-500">
-                      {person.name}
+                      {person.receiver || "Unknown User"}
                     </span>
-                    <span className="hidden flex-1 text-center text-gray-500 text-base sm:block">
-                      {person.phone || "No Phone Number"}
+                    <span className="hidden flex-1 text-center text-base text-gray-500 sm:block">
+                      {person.phone_number || "No Phone Number"}
                     </span>
-                    <i className="ph ph-star text-2xl text-gray-500 cursor-pointer transition-colors duration-200 hover:text-blue-600"></i>
+                    <i className="ph ph-star cursor-pointer text-2xl text-gray-500 transition-colors duration-200 hover:text-blue-600"></i>
                   </div>
                 </Link>
-              ))}
+              ))
+            ) : (
+              <div className="py-12 text-center text-sm font-medium text-gray-500">
+                No receivers found.
+              </div>
+            )}
           </div>
         </div>
       </section>

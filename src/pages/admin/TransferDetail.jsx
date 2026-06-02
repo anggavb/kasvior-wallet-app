@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
+import { toast } from "react-toastify";
 import { TransferIcon } from "@components/atoms/icons";
 import {
   PinModal,
@@ -12,6 +13,7 @@ import { usePageTitle } from "@hooks";
 import { profile } from "@/assets/images";
 import { Button } from "@components/atoms/";
 import { PageHeader, Stepper } from "@components/molecules";
+import { api, getApiAssetUrl } from "@utils";
 
 const TRANSFER_STEPS = ["Find People", "Set Nominal", "Finish"];
 
@@ -20,8 +22,10 @@ function TransferDetail() {
   const [transferFailedModal, setTransferFailedModal] = useState(false);
   const [transferSuccessModal, setTransferSuccessModal] = useState(false);
   const [formTransfer, setFormTransfer] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   usePageTitle("Transfer Detail");
+  const navigate = useNavigate();
 
   const {
     register,
@@ -29,18 +33,66 @@ function TransferDetail() {
     formState: { errors },
   } = useForm();
 
-  const [searchParams, _] = useSearchParams();
-  const userId = searchParams.get("userId") ?? "";
-  const { users } = useSelector((state) => state.users);
+  const [searchParams] = useSearchParams();
   const { user } = useSelector((state) => state.userLogin);
 
-  const transferTo = users.find((usr) => usr.id === parseInt(userId));
+  const transferTo = {
+    walletId: searchParams.get("walletId") ?? "",
+    name: searchParams.get("name") ?? "Unknown User",
+    phone: searchParams.get("phone") ?? "",
+    photo: searchParams.get("photo") ?? "",
+  };
 
-  const handleTransfer = (data) => {
-    setFormTransfer({ id: user.id, data, transferTo });
-    setTimeout(() => {
+  const handleTransfer = async (data) => {
+    if (!user?.token) {
+      toast.error("Please login again.");
+      return;
+    }
+
+    if (!transferTo.walletId) {
+      toast.error("Please choose a receiver first.");
+      return;
+    }
+
+    const amount = Number(data.amount || 0);
+    const notes = data.notes?.trim() || null;
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await api.post(
+        "/transaction/transfer",
+        {
+          recipient_wallet_id: transferTo.walletId,
+          amount,
+          notes,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+        },
+      );
+
+      const transactionId = response.data?.transaction_id;
+      if (!transactionId) {
+        throw new Error("Missing transaction id");
+      }
+
+      setFormTransfer({
+        data: {
+          amount,
+          notes,
+        },
+        transactionId,
+        transferTo,
+      });
       setPinModal(true);
-    }, 500);
+    } catch (err) {
+      toast.error(err.data?.message || "Transfer failed to start.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -55,27 +107,27 @@ function TransferDetail() {
       <section>
         <form
           onSubmit={handleSubmit(handleTransfer)}
-          className="flex flex-col p-4 bg-white border border-neutral-200 rounded-xl sm:p-6 lg:p-8 gap-6 sm:gap-8"
+          className="flex flex-col gap-6 rounded-xl border border-neutral-200 bg-white p-4 sm:gap-8 sm:p-6 lg:p-8"
         >
           {/* People Information */}
           <div className="form-group">
             <label className="text-[0.9rem] font-semibold text-gray-500 sm:text-base">
               People Information
             </label>
-            <div className="flex flex-col items-center gap-4 p-4 text-center transition-colors bg-gray-50 rounded-xl sm:flex-row sm:text-left sm:gap-6">
+            <div className="flex flex-col items-center gap-4 rounded-xl bg-gray-50 p-4 text-center transition-colors sm:flex-row sm:gap-6 sm:text-left">
               <img
-                src={transferTo?.avatar || profile}
-                alt={transferTo?.name}
-                className="object-cover w-15 h-15 rounded-xl shrink-0"
+                src={getApiAssetUrl(transferTo.photo) || profile}
+                alt={transferTo.name}
+                className="h-15 w-15 shrink-0 rounded-xl object-cover"
               />
-              <div className="flex flex-col grow gap-1">
+              <div className="flex grow flex-col gap-1">
                 <h4 className="text-base font-semibold text-neutral-800">
-                  {transferTo?.name}
+                  {transferTo.name}
                 </h4>
                 <p className="text-xs text-neutral-800">
-                  {transferTo?.phone || "No Phone Number"}
+                  {transferTo.phone || "No Phone Number"}
                 </p>
-                <span className="inline-flex items-center mx-auto sm:mx-0 w-fit gap-1.5 px-2.5 py-1 mt-1 text-xs font-semibold text-white bg-blue-700 border border-transparent rounded-md">
+                <span className="mx-auto mt-1 inline-flex w-fit items-center gap-1.5 rounded-md border border-transparent bg-blue-700 px-2.5 py-1 text-xs font-semibold text-white sm:mx-0">
                   <svg
                     width="16"
                     height="16"
@@ -108,23 +160,34 @@ function TransferDetail() {
             <label className="text-[0.9rem] font-semibold text-gray-500 sm:text-base">
               Amount
             </label>
-            <p className="text-sm text-neutral-800 -mt-1 mb-2">
+            <p className="-mt-1 mb-2 text-sm text-neutral-800">
               Type the amount you want to transfer
             </p>
             <div className="relative flex items-center">
               <input
                 {...register("amount", {
                   required: "Amount is required",
-                  validate: (value) =>
-                    parseInt(user.balance || 0) >= parseInt(value) ||
-                    "Insufficient balance",
+                  min: {
+                    value: 1,
+                    message: "Amount must be greater than 0",
+                  },
+                  validate: (value) => {
+                    if (user?.balance == null) {
+                      return true;
+                    }
+
+                    return (
+                      Number(user.balance) >= Number(value) ||
+                      "Insufficient balance"
+                    );
+                  },
                 })}
                 type="number"
                 placeholder="Enter Nominal Transfer"
-                className="w-full p-4 text-base font-[inherit] text-neutral-800 bg-transparent border border-neutral-200 rounded-lg outline-none transition-colors focus:border-blue-700"
+                className="w-full rounded-lg border border-neutral-200 bg-transparent p-4 font-[inherit] text-base text-neutral-800 transition-colors outline-none focus:border-blue-700"
               />
               {errors.amount && (
-                <span className="text-red-500 text-sm absolute mt-20">
+                <span className="absolute mt-20 text-sm text-red-500">
                   {errors.amount.message}
                 </span>
               )}
@@ -136,22 +199,23 @@ function TransferDetail() {
             <label className="text-[0.9rem] font-semibold text-gray-500 sm:text-base">
               Notes
             </label>
-            <p className="text-sm text-neutral-800 -mt-1 mb-2">
+            <p className="-mt-1 mb-2 text-sm text-neutral-800">
               You can add some notes for this transaction
             </p>
             <textarea
               {...register("notes")}
               placeholder="Enter Some Notes"
               rows="4"
-              className="w-full p-4 text-base font-[inherit] text-neutral-800 bg-transparent border border-neutral-200 rounded-lg outline-none resize-y transition-colors focus:border-blue-700"
+              className="w-full resize-y rounded-lg border border-neutral-200 bg-transparent p-4 font-[inherit] text-base text-neutral-800 transition-colors outline-none focus:border-blue-700"
             ></textarea>
           </div>
 
           <Button
             type="submit"
-            className="mt-2 sm:mt-4 text-[0.9rem] sm:text-base bg-blue-900 hover:bg-blue-950 hover:shadow-[0_4px_12px_rgba(30,58,138,0.3)] rounded-lg"
+            disabled={isSubmitting || !transferTo.walletId}
+            className="mt-2 rounded-lg bg-blue-900 text-[0.9rem] hover:bg-blue-950 hover:shadow-[0_4px_12px_rgba(30,58,138,0.3)] sm:mt-4 sm:text-base"
           >
-            Submit & Transfer
+            {isSubmitting ? "Submitting..." : "Submit & Transfer"}
           </Button>
         </form>
       </section>
@@ -170,16 +234,18 @@ function TransferDetail() {
       />
       <TransferFailedModal
         isOpen={transferFailedModal}
+        receiverName={formTransfer.transferTo?.name}
         onTryAgain={() => {
           setTransferFailedModal(false);
-          setPinModal(true);
+          navigate("/admin/transfer");
         }}
-        onBack={() => setTransferFailedModal(false)}
+        onBack={() => navigate("/admin")}
       />
       <TransferSuccessModal
         isOpen={transferSuccessModal}
-        onDone={() => setTransferSuccessModal(false)}
-        onTransferAgain={() => setTransferSuccessModal(false)}
+        receiverName={formTransfer.transferTo?.name}
+        onDone={() => navigate("/admin")}
+        onTransferAgain={() => navigate("/admin/transfer")}
       />
     </main>
   );
