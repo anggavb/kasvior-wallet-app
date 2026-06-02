@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useSelector } from "react-redux";
 import { usePageTitle } from "@hooks";
@@ -7,12 +7,7 @@ import {
   TransactionHistory,
   FinancialChart,
 } from "@components/molecules";
-import {
-  listWidget,
-  listHistoryTransactions,
-  dataFinancialChart,
-  formatRupiah,
-} from "@utils";
+import { listWidget, dataFinancialChart, formatRupiah, api } from "@utils";
 import {
   MoneyInsertIcon,
   TransferIcon,
@@ -24,11 +19,70 @@ function Dashboard() {
   usePageTitle("Dashboard");
   const [chartType, setChartType] = useState("All");
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const historyRequestKey = userLoggedIn?.token || "";
+  const [historyState, setHistoryState] = useState({
+    key: "",
+    items: [],
+    error: "",
+  });
+
+  useEffect(() => {
+    if (!userLoggedIn?.token) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isCurrent = true;
+
+    api
+      .get("/transaction/history", {
+        params: {
+          page: 1,
+          limit: 10,
+        },
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${userLoggedIn.token}`,
+        },
+      })
+      .then((response) => {
+        if (!isCurrent) {
+          return;
+        }
+
+        setHistoryState({
+          key: historyRequestKey,
+          items: response.data?.items ?? [],
+          error: "",
+        });
+      })
+      .catch((err) => {
+        if (!isCurrent || err.name === "CanceledError") {
+          return;
+        }
+
+        setHistoryState({
+          key: historyRequestKey,
+          items: [],
+          error: err.data?.message || "Failed to load history.",
+        });
+      });
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [historyRequestKey, userLoggedIn?.token]);
+
+  const history = historyState.items;
+  const historyLoading =
+    Boolean(userLoggedIn?.token) && historyState.key !== historyRequestKey;
+  const historyError = historyState.error;
 
   return (
     <>
       {/* Main Content */}
-      <main className="flex flex-col gap-4 p-3 sm:p-6 sm:gap-6 md:p-8 xl:p-10 2xl:p-12">
+      <main className="flex flex-col gap-4 p-3 sm:gap-6 sm:p-6 md:p-8 xl:p-10 2xl:p-12">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
           <Widget
             key="balance"
@@ -67,18 +121,18 @@ function Dashboard() {
           ))}
         </div>
 
-        <section className="flex flex-col items-start gap-4 p-5 bg-white border border-gray-200 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <section className="flex flex-col items-start gap-4 border border-gray-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <h3 className="text-lg font-semibold">Fast Service</h3>
-          <div className="flex flex-col w-full gap-4 sm:flex-row sm:w-auto">
+          <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row">
             <Link
               to="top-up"
-              className="inline-flex items-center justify-center gap-2 px-8 py-3 text-white transition-all bg-blue-600 rounded-lg sm:w-auto hover:bg-blue-700 font-medium"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-8 py-3 font-medium text-white transition-all hover:bg-blue-700 sm:w-auto"
             >
               <MoneyInsertIcon /> Top Up
             </Link>
             <Link
               to="transfer"
-              className="inline-flex items-center justify-center gap-2 px-8 py-3 text-white transition-all bg-blue-600 rounded-lg sm:w-auto hover:bg-blue-700 font-medium"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-8 py-3 font-medium text-white transition-all hover:bg-blue-700 sm:w-auto"
             >
               <TransferIcon className="fill-white" /> Transfer
             </Link>
@@ -86,17 +140,17 @@ function Dashboard() {
         </section>
 
         <section className="grow">
-          <div className="flex flex-col gap-4 p-4 bg-white border border-gray-200 sm:p-6">
-            <div className="flex flex-col items-start gap-3 mb-8 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 border border-gray-200 bg-white p-4 sm:p-6">
+            <div className="mb-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-lg font-semibold">{chartType} Chart</h3>
               <div className="flex gap-3">
-                <select className="px-3 py-1.5 text-sm text-neutral-800 bg-gray-50 border border-gray-200 rounded-md outline-none cursor-pointer">
+                <select className="cursor-pointer rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-neutral-800 outline-none">
                   <option>7 Days</option>
                 </select>
                 <select
                   value={chartType}
                   onChange={(e) => setChartType(e.target.value)}
-                  className="px-3 py-1.5 text-sm text-neutral-800 bg-gray-50 border border-gray-200 rounded-md outline-none cursor-pointer"
+                  className="cursor-pointer rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-neutral-800 outline-none"
                 >
                   <option value="All">All</option>
                   <option value="Income">Income</option>
@@ -114,8 +168,8 @@ function Dashboard() {
 
       {/* Right Panel */}
       <aside className="px-4 pb-6 md:col-start-2 md:px-8 md:pb-8 lg:col-auto lg:p-8 lg:pl-0 xl:p-8 xl:pl-0">
-        <div className="h-full p-4 bg-white border border-gray-200 sm:p-6">
-          <div className="flex flex-col items-start gap-2 mb-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="h-full border border-gray-200 bg-white p-4 sm:p-6">
+          <div className="mb-6 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-lg font-semibold">Transaction History</h3>
             <Link to="history" className="text-sm font-medium text-blue-600">
               See All
@@ -123,12 +177,24 @@ function Dashboard() {
           </div>
 
           <div className="flex flex-col gap-5">
-            {listHistoryTransactions.map((transaction) => (
-              <TransactionHistory
-                key={transaction.name}
-                transaction={transaction}
-              />
-            ))}
+            {historyLoading ? (
+              <p className="text-sm font-medium text-gray-500">
+                Loading history...
+              </p>
+            ) : historyError ? (
+              <p className="text-sm font-medium text-red-500">{historyError}</p>
+            ) : history.length > 0 ? (
+              history.map((transaction) => (
+                <TransactionHistory
+                  key={transaction.id}
+                  transaction={transaction}
+                />
+              ))
+            ) : (
+              <p className="text-sm font-medium text-gray-500">
+                No transaction history yet.
+              </p>
+            )}
           </div>
         </div>
       </aside>
