@@ -5,6 +5,7 @@ import dataFinancialChart from './dataFinancialChart';
 import listPaymentMethod from './listPaymentMethod';
 import getEnv from './getEnv';
 import formatRupiah from './moneyFormater';
+import api from './axios';
 
 export {
   listMenus,
@@ -14,4 +15,5 @@ export {
   listPaymentMethod,
   getEnv,
   formatRupiah,
+  api,
 };
