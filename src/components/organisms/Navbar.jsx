@@ -1,33 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useSelector } from "react-redux";
-import useLogoutStore from "@zustand/store";
-import { userLoginAction } from "@redux/slices/userLogin";
-import { useNavigate } from "react-router";
-import { useDispatch } from "react-redux";
-import { toast } from "react-toastify";
 
 import { LogoutIcon, DashboardIcon } from "@components/atoms/icons";
+import { useLogout } from "@hooks";
 import profile from "@/assets/images/Ellipse 185.png";
+
 const Navbar = () => {
-  const navigate = useNavigate();
-  const dispatch = useDispatch();
   const { user } = useSelector((state) => state.userLogin);
-  const { toggleModalLogout, setHandleConfirm } = useLogoutStore(
-    (state) => state,
-  );
+  const requestLogout = useLogout();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   const handleConfirmLogout = () => {
-    toggleModalLogout();
-    setHandleConfirm(() => {
-      toggleModalLogout();
-      navigate("/", { replace: true });
-      setTimeout(() => {
-        dispatch(userLoginAction.logout());
-      }, 50);
-      toast.info("Come back soon! 👋");
-    });
+    setIsProfileMenuOpen(false);
+    requestLogout();
   };
   return (
     <header className="py-4 bg-blue-700 text-white shadow-sm sticky top-0 z-100">

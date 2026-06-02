@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "react-toastify";
 
 import { TopUpIcon } from "@components/atoms/icons";
 import { RadioMenu, PageHeader } from "@components/molecules";
 import { Button } from "@components/atoms/";
-import { FloatingConfirm } from "@components/organisms";
 import { usePageTitle } from "@hooks";
 import { listPaymentMethod, formatRupiah } from "@utils";
 import { profile } from "@/assets/images";
@@ -21,40 +19,32 @@ function TopUp() {
   const { changeTitle, changeMessages, toggleModalLogout, setHandleConfirm } =
     useLogoutStore((state) => state);
 
-  const [delivery, setDelivery] = useState(0);
-  const [tax, setTax] = useState(0);
-  const [total, setTotal] = useState(0);
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-    watch,
+    control,
     reset,
   } = useForm();
 
-  const watchNominal = watch("nominal", "");
-  const watchPaymentMethod = watch("payment_method");
+  const watchNominal = useWatch({
+    control,
+    name: "nominal",
+    defaultValue: "",
+  });
+  const watchPaymentMethod = useWatch({
+    control,
+    name: "payment_method",
+  });
 
-  useEffect(() => {
-    const isBank = listPaymentMethod.find(
-      (method) => method.value === watchPaymentMethod,
-    )?.isBank;
-    if (watchNominal) {
-      if (isBank) {
-        setDelivery(-5000);
-      } else {
-        setDelivery(0);
-      }
-      setTax(4000);
-    } else {
-      setTax(0);
-      setDelivery(0);
-    }
-
-    setTotal(Number(watchNominal) + Number(delivery) + Number(tax));
-  }, [watchPaymentMethod, watchNominal, delivery, tax]);
+  const selectedPaymentMethod = listPaymentMethod.find(
+    (method) => method.value === watchPaymentMethod,
+  );
+  const delivery = watchNominal && selectedPaymentMethod?.isBank ? -5000 : 0;
+  const tax = watchNominal ? 4000 : 0;
+  const total = Number(watchNominal) + delivery + tax;
 
   const handleTopUp = (data) => {
     changeMessages("Are you sure you want to top up your account?");

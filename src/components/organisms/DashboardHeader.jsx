@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { toast } from "react-toastify";
 import profile from "@/assets/images/Ellipse 185.png";
 import { Link, useNavigate } from "react-router";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 import { LogoutIcon } from "@components/atoms/icons";
 import { listMenus } from "@utils";
-import useLogoutStore from "@zustand/store";
-import { userLoginAction } from "@redux/slices/userLogin";
+import { useLogout } from "@hooks";
 
 /**
  * DashboardHeader component that renders the header for the dashboard layout.
@@ -15,24 +13,13 @@ import { userLoginAction } from "@redux/slices/userLogin";
 
 function DashboardHeader() {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
-  const { toggleModalLogout, setHandleConfirm } = useLogoutStore(
-    (state) => state,
-  );
+  const requestLogout = useLogout();
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleConfirmLogout = () => {
-    toggleModalLogout();
-    setHandleConfirm(() => {
-      toggleModalLogout();
-      navigate("/", { replace: true });
-      setTimeout(() => {
-        dispatch(userLoginAction.logout());
-      }, 50);
-      toast.info("Come back soon! 👋");
-    });
+    requestLogout();
   };
 
   return (
@@ -127,7 +114,15 @@ function DashboardHeader() {
             <Link
               key={menu.name}
               to={menu.to}
-              onClick={menu.onclick}
+              onClick={
+                menu.name === "Logout"
+                  ? (e) => {
+                      e.preventDefault();
+                      setIsMobileMenuOpen(false);
+                      handleConfirmLogout();
+                    }
+                  : menu.onclick
+              }
               className={menu.class}
             >
               {menu.name}

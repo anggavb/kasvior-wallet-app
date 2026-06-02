@@ -6,6 +6,7 @@ import { ToastContainer } from "react-toastify";
 import { PersistGate } from "redux-persist/integration/react";
 import store, { persistor } from "@/redux/store";
 import { LoadingOverlay } from "@components/molecules";
+import { ConfirmRoot } from "@components/organisms";
 
 import "./globals.css";
 import AppRouter from "./AppRouter.jsx";
@@ -21,6 +22,7 @@ createRoot(document.getElementById("root")).render(
             autoClose={3000}
             theme="colored"
           />
+          <ConfirmRoot />
           <AppRouter />
         </BrowserRouter>
       </StrictMode>
