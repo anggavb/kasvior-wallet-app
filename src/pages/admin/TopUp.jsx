@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "react-toastify";
 
@@ -5,17 +6,17 @@ import { TopUpIcon } from "@components/atoms/icons";
 import { RadioMenu, PageHeader } from "@components/molecules";
 import { Button } from "@components/atoms/";
 import { usePageTitle } from "@hooks";
-import { listPaymentMethod, formatRupiah } from "@utils";
+import { api, listPaymentMethod, formatRupiah } from "@utils";
 import { profile } from "@/assets/images";
 
 import { useDispatch, useSelector } from "react-redux";
-import { usersAction } from "@redux/slices/userRegistered";
 import { userLoginAction } from "@redux/slices/userLogin";
 import useLogoutStore from "@zustand/store";
 
 function TopUp() {
   usePageTitle("Top Up");
   const dispatch = useDispatch();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { changeTitle, changeMessages, toggleModalLogout, setHandleConfirm } =
     useLogoutStore((state) => state);
 
@@ -27,7 +28,12 @@ function TopUp() {
     formState: { errors },
     control,
     reset,
-  } = useForm();
+  } = useForm({
+    defaultValues: {
+      nominal: "",
+      payment_method: listPaymentMethod[0]?.value,
+    },
+  });
 
   const watchNominal = useWatch({
     control,
@@ -42,49 +48,65 @@ function TopUp() {
   const selectedPaymentMethod = listPaymentMethod.find(
     (method) => method.value === watchPaymentMethod,
   );
-  const delivery = watchNominal && selectedPaymentMethod?.isBank ? -5000 : 0;
-  const tax = watchNominal ? 4000 : 0;
-  const total = Number(watchNominal) + delivery + tax;
+  const amount = Number(watchNominal || 0);
+  const discount =
+    amount > 0 && selectedPaymentMethod?.value === "bca" ? 5000 : 0;
+  const tax = amount > 0 ? selectedPaymentMethod?.tax || 0 : 0;
+  const total = amount - discount + tax;
 
   const handleTopUp = (data) => {
     changeMessages("Are you sure you want to top up your account?");
     changeTitle("Confirm Top Up");
-    if (total > 0) {
-      setHandleConfirm(() => {
-        toggleModalLogout();
-        dispatch(
-          usersAction.topUp({
-            id: userLoggedIn.id,
-            amount: Number(data.nominal),
-            payment_method: data.payment_method,
-          }),
+
+    const nominal = Number(data.nominal || 0);
+    if (!userLoggedIn?.token) {
+      toast.error("Please login again.");
+      return;
+    }
+    if (!selectedPaymentMethod || nominal <= 0 || total < 0) {
+      toast.error("Please enter a valid nominal amount!");
+      return;
+    }
+
+    setHandleConfirm(async () => {
+      toggleModalLogout();
+      setIsSubmitting(true);
+
+      try {
+        await api.post(
+          "/transaction/topup",
+          {
+            type: "topup",
+            payment_method_id: selectedPaymentMethod.id,
+            amount: nominal,
+            discount,
+            tax,
+            sub_total: total,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${userLoggedIn.token}`,
+            },
+          },
         );
 
-        const userBalance = userLoggedIn?.balance || 0;
         dispatch(
           userLoginAction.updated({
-            ...userLoggedIn,
-            balance: userBalance + Number(data.nominal),
-            history: [
-              ...(userLoggedIn.history || []),
-              {
-                userId: userLoggedIn.id,
-                type: "top-up",
-                amount: Number(data.nominal),
-                payment_method: data.payment_method,
-                date: new Date().toISOString(),
-              },
-            ],
+            balance: Number(userLoggedIn?.balance || 0) + nominal,
           }),
         );
         reset();
-        toast.success("Top up successful! 🎉");
-      });
-      toggleModalLogout();
-      return;
-    }
-    toast.error("Please enter a valid nominal amount! ❌");
+        toast.success("Top up successful!");
+      } catch (err) {
+        toast.error(err.data?.message || "Top up failed.");
+      } finally {
+        setIsSubmitting(false);
+      }
+    });
+
+    toggleModalLogout();
   };
+
   return (
     <main className="page-main md:col-span-1 lg:col-span-2">
       <PageHeader
@@ -95,24 +117,29 @@ function TopUp() {
       <form onSubmit={handleSubmit(handleTopUp)}>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8 xl:gap-10">
           {/* Top-Up Form (Left Column) */}
-          <div className="flex flex-col flex-1 min-w-0 gap-5 p-4 bg-white border border-gray-200 rounded-xl sm:p-6 sm:gap-6 lg:gap-8">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 rounded-xl border border-gray-200 bg-white p-4 sm:gap-6 sm:p-6 lg:gap-8">
             {/* Account Information */}
             <div className="form-group">
               <label className="form-label">Account Information</label>
-              <div className="flex items-center gap-4 px-4 py-3.5 bg-gray-50 rounded-lg sm:px-5 sm:py-4">
+              <div className="flex items-center gap-4 rounded-lg bg-gray-50 px-4 py-3.5 sm:px-5 sm:py-4">
                 <img
-                  src={userLoggedIn?.avatar || profile}
-                  alt={userLoggedIn?.name || "Unknown User"}
-                  className="object-cover shrink-0 w-12 h-12 rounded-xl sm:w-14 sm:h-14"
+                  src={userLoggedIn?.avatar || userLoggedIn?.photo || profile}
+                  alt={userLoggedIn?.name || userLoggedIn?.fullname || "User"}
+                  className="h-12 w-12 shrink-0 rounded-xl object-cover sm:h-14 sm:w-14"
                 />
                 <div className="flex flex-col gap-1">
                   <h4 className="text-base font-semibold text-neutral-800">
-                    {userLoggedIn?.name || "Unknown User"}
+                    {userLoggedIn?.name ||
+                      userLoggedIn?.fullname ||
+                      userLoggedIn?.email ||
+                      "Unknown User"}
                   </h4>
                   <p className="text-sm text-gray-500 sm:text-[0.85rem]">
-                    {userLoggedIn?.phone || "No Phone Number"}
+                    {userLoggedIn?.phone ||
+                      userLoggedIn?.phone_number ||
+                      "No Phone Number"}
                   </p>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 mt-1 text-xs font-semibold text-emerald-600 bg-emerald-600/10 border border-emerald-600/25 rounded-full w-fit">
+                  <span className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-600/25 bg-emerald-600/10 px-2.5 py-1 text-xs font-semibold text-emerald-600">
                     <i className="ph-fill ph-check-circle"></i> Verified
                   </span>
                 </div>
@@ -122,7 +149,7 @@ function TopUp() {
             {/* Amount */}
             <div className="form-group">
               <label className="form-label">Amount</label>
-              <p className="text-sm text-gray-500 mt-0.5 mb-2">
+              <p className="mt-0.5 mb-2 text-sm text-gray-500">
                 Type the amount you want to transfer to your Kasvior account
               </p>
               <div className="form-input">
@@ -141,14 +168,18 @@ function TopUp() {
                 <input
                   {...register("nominal", {
                     required: "Nominal is required",
+                    min: {
+                      value: 1,
+                      message: "Nominal must be greater than 0",
+                    },
                   })}
                   name="nominal"
                   type="number"
                   placeholder="Enter Nominal Transfer"
-                  className="input-raw [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="input-raw [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 {errors.nominal && (
-                  <span className="text-red-500 text-sm">
+                  <span className="text-sm text-red-500">
                     {errors.nominal.message}
                   </span>
                 )}
@@ -158,7 +189,7 @@ function TopUp() {
             {/* Payment Method */}
             <div className="form-group">
               <label className="form-label">Payment Method</label>
-              <p className="text-sm text-gray-500 mt-0.5 mb-2">
+              <p className="mt-0.5 mb-2 text-sm text-gray-500">
                 Choose your payment method for top up account
               </p>
               <div className="flex flex-col gap-3">
@@ -177,24 +208,26 @@ function TopUp() {
 
           {/* Summary Card (Right Column) */}
           <aside className="w-full shrink-0 lg:w-[320px] xl:w-87.5 2xl:w-95">
-            <div className="flex flex-col gap-0 p-5 bg-white border border-gray-200 rounded-xl sm:p-6 lg:p-7 xl:p-8 lg:sticky lg:top-23.5">
+            <div className="flex flex-col gap-0 rounded-xl border border-gray-200 bg-white p-5 sm:p-6 lg:sticky lg:top-23.5 lg:p-7 xl:p-8">
               <h3 className="mb-5 text-base font-bold text-neutral-800 sm:text-lg">
                 Payment
               </h3>
 
-              <div className="flex items-center justify-between mb-3.5 text-sm sm:text-base">
+              <div className="mb-3.5 flex items-center justify-between text-sm sm:text-base">
                 <span className="font-normal text-neutral-800">Amount</span>
                 <span className="font-semibold text-neutral-800">
-                  {formatRupiah(watchNominal) || 0}
+                  {formatRupiah(amount)}
                 </span>
               </div>
-              <div className="flex items-center justify-between mb-3.5 text-sm sm:text-base">
+              <div className="mb-3.5 flex items-center justify-between text-sm sm:text-base">
                 <span className="font-normal text-neutral-800">Discount</span>
                 <span className="font-semibold text-neutral-800">
-                  {formatRupiah(delivery)}
+                  {discount > 0
+                    ? `-${formatRupiah(discount)}`
+                    : formatRupiah(0)}
                 </span>
               </div>
-              <div className="flex items-center justify-between mb-3.5 text-sm sm:text-base">
+              <div className="mb-3.5 flex items-center justify-between text-sm sm:text-base">
                 <span className="font-normal text-neutral-800">Tax</span>
                 <span className="font-semibold text-neutral-800">
                   {formatRupiah(tax)}
@@ -203,7 +236,7 @@ function TopUp() {
 
               <div className="divider my-4 sm:my-5"></div>
 
-              <div className="flex items-center justify-between mb-3.5">
+              <div className="mb-3.5 flex items-center justify-between">
                 <span className="text-[0.9rem] font-semibold text-neutral-800">
                   Sub Total
                 </span>
@@ -212,8 +245,12 @@ function TopUp() {
                 </span>
               </div>
 
-              <Button className="mt-5 text-[0.9rem]" type="submit">
-                Submit
+              <Button
+                className="mt-5 text-[0.9rem]"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
 
               <p className="mt-3 text-xs leading-relaxed text-gray-500">
