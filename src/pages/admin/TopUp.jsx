@@ -1,17 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "react-toastify";
 
-import { TopUpIcon } from "@components/atoms/icons";
+import {
+  BCAIcon,
+  BRIIcon,
+  DanaIcon,
+  GopayIcon,
+  OVOIcon,
+  TopUpIcon,
+} from "@components/atoms/icons";
 import { RadioMenu, PageHeader } from "@components/molecules";
 import { Button } from "@components/atoms/";
 import { usePageTitle } from "@hooks";
-import { api, listPaymentMethod, formatRupiah } from "@utils";
+import { api, formatRupiah } from "@utils";
 import { profile } from "@/assets/images";
 
 import { useDispatch, useSelector } from "react-redux";
 import { userLoginAction } from "@redux/slices/userLogin";
 import useLogoutStore from "@zustand/store";
+
+const BANK_DISCOUNT = 4000;
+
+const PAYMENT_METHOD_ICONS = {
+  bca: BCAIcon,
+  bri: BRIIcon,
+  dana: DanaIcon,
+  gopay: GopayIcon,
+  ovo: OVOIcon,
+};
+
+const getPaymentMethodIcon = (paymentMethod) => {
+  const nameKey = paymentMethod.name?.toLowerCase();
+  const logoKey = paymentMethod.logo
+    ?.split("/")
+    .pop()
+    ?.replace(/\.[^.]+$/, "")
+    .toLowerCase();
+
+  return (
+    PAYMENT_METHOD_ICONS[nameKey] || PAYMENT_METHOD_ICONS[logoKey] || BRIIcon
+  );
+};
+
+const toPaymentMethodOption = (paymentMethod) => ({
+  ...paymentMethod,
+  value: String(paymentMethod.id),
+  icon: getPaymentMethodIcon(paymentMethod),
+  errorMessage: "Please select a payment method",
+});
 
 function TopUp() {
   usePageTitle("Top Up");
@@ -21,6 +58,12 @@ function TopUp() {
     useLogoutStore((state) => state);
 
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const paymentMethodRequestKey = userLoggedIn?.token || "";
+  const [paymentMethodState, setPaymentMethodState] = useState({
+    key: "",
+    items: [],
+    error: "",
+  });
 
   const {
     register,
@@ -28,12 +71,65 @@ function TopUp() {
     formState: { errors },
     control,
     reset,
+    setValue,
   } = useForm({
     defaultValues: {
       nominal: "",
-      payment_method: listPaymentMethod[0]?.value,
+      payment_method: "",
     },
   });
+
+  useEffect(() => {
+    if (!userLoggedIn?.token) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isCurrent = true;
+
+    api
+      .get("/transaction/payment-methods", {
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${userLoggedIn.token}`,
+        },
+      })
+      .then((response) => {
+        if (!isCurrent) {
+          return;
+        }
+
+        const methods = (response.data?.items ?? []).map(toPaymentMethodOption);
+
+        setPaymentMethodState({
+          key: paymentMethodRequestKey,
+          items: methods,
+          error: "",
+        });
+
+        if (methods.length > 0) {
+          setValue("payment_method", methods[0].value, {
+            shouldValidate: true,
+          });
+        }
+      })
+      .catch((err) => {
+        if (!isCurrent || err.name === "CanceledError") {
+          return;
+        }
+
+        setPaymentMethodState({
+          key: paymentMethodRequestKey,
+          items: [],
+          error: err.data?.message || "Failed to load payment methods.",
+        });
+      });
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [paymentMethodRequestKey, setValue, userLoggedIn?.token]);
 
   const watchNominal = useWatch({
     control,
@@ -45,12 +141,16 @@ function TopUp() {
     name: "payment_method",
   });
 
-  const selectedPaymentMethod = listPaymentMethod.find(
+  const paymentMethods = paymentMethodState.items;
+  const isPaymentMethodLoading =
+    Boolean(userLoggedIn?.token) &&
+    paymentMethodState.key !== paymentMethodRequestKey;
+  const selectedPaymentMethod = paymentMethods.find(
     (method) => method.value === watchPaymentMethod,
   );
   const amount = Number(watchNominal || 0);
   const discount =
-    amount > 0 && selectedPaymentMethod?.value === "bca" ? 5000 : 0;
+    amount > 0 && selectedPaymentMethod?.method === "bank" ? BANK_DISCOUNT : 0;
   const tax = amount > 0 ? selectedPaymentMethod?.tax || 0 : 0;
   const total = amount - discount + tax;
 
@@ -63,7 +163,12 @@ function TopUp() {
       toast.error("Please login again.");
       return;
     }
-    if (!selectedPaymentMethod || nominal <= 0 || total < 0) {
+    if (
+      !selectedPaymentMethod ||
+      isPaymentMethodLoading ||
+      nominal <= 0 ||
+      total < 0
+    ) {
       toast.error("Please enter a valid nominal amount!");
       return;
     }
@@ -95,7 +200,10 @@ function TopUp() {
             balance: Number(userLoggedIn?.balance || 0) + nominal,
           }),
         );
-        reset();
+        reset({
+          nominal: "",
+          payment_method: paymentMethods[0]?.value || "",
+        });
         toast.success("Top up successful!");
       } catch (err) {
         toast.error(err.data?.message || "Top up failed.");
@@ -193,15 +301,29 @@ function TopUp() {
                 Choose your payment method for top up account
               </p>
               <div className="flex flex-col gap-3">
-                {listPaymentMethod.map((method, idx) => (
-                  <RadioMenu
-                    key={idx}
-                    name="payment_method"
-                    paymentMethod={method}
-                    isDefault={idx === 0}
-                    register={register}
-                  />
-                ))}
+                {isPaymentMethodLoading ? (
+                  <p className="text-sm font-medium text-gray-500">
+                    Loading payment methods...
+                  </p>
+                ) : paymentMethodState.error ? (
+                  <p className="text-sm font-medium text-red-500">
+                    {paymentMethodState.error}
+                  </p>
+                ) : paymentMethods.length > 0 ? (
+                  paymentMethods.map((method, idx) => (
+                    <RadioMenu
+                      key={method.id}
+                      name="payment_method"
+                      paymentMethod={method}
+                      isDefault={idx === 0}
+                      register={register}
+                    />
+                  ))
+                ) : (
+                  <p className="text-sm font-medium text-gray-500">
+                    No payment methods available.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -248,13 +370,17 @@ function TopUp() {
               <Button
                 className="mt-5 text-[0.9rem]"
                 type="submit"
-                disabled={isSubmitting}
+                disabled={
+                  isSubmitting ||
+                  isPaymentMethodLoading ||
+                  paymentMethods.length === 0
+                }
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
 
               <p className="mt-3 text-xs leading-relaxed text-gray-500">
-                *Get Discount if you pay with Bank Central Asia
+                *Bank payment methods get {formatRupiah(BANK_DISCOUNT)} discount
               </p>
             </div>
           </aside>
