@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
-import { useDispatch, useSelector } from "react-redux";
 
 import { AuthLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -14,36 +14,49 @@ import {
   PasswordIcon,
 } from "@components/atoms/icons";
 import { usePageTitle, useRedirectIfLoggedIn } from "@hooks";
-
-import { usersAction } from "@redux/slices/userRegistered";
+import { api } from "@utils";
 
 const Register = () => {
   usePageTitle("Register");
   useRedirectIfLoggedIn();
 
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const {
     register,
     handleSubmit,
     watch,
     formState: { errors },
   } = useForm();
-  const { users } = useSelector((state) => state.users);
-  const dispatch = useDispatch();
 
   const password = watch("password");
 
-  const handleRegister = (data) => {
-    if (users.some((user) => user.email === data.email)) {
-      toast.error("Email already registered!");
+  const getRegisterErrorMessage = (error) => {
+    const responseData = error.response?.data || error.data;
+
+    if (responseData?.message) {
+      return responseData.message;
     }
 
-    const name = data.email.split("@")[0];
-    dispatch(usersAction.register({ ...data, name }));
-    toast.success("Registration successful! You can now log in.");
-    setTimeout(() => {
+    if (responseData?.errors) {
+      return Object.values(responseData.errors).filter(Boolean).join(", ");
+    }
+
+    return "Registration failed. Please try again.";
+  };
+
+  const handleRegister = async ({ email, password }) => {
+    setIsSubmitting(true);
+
+    try {
+      const response = await api.post("/auth/register", { email, password });
+      toast.success(response.message || "Registration successful! You can now log in.");
       navigate("/login", { replace: true });
-    }, 1500);
+    } catch (error) {
+      toast.error(getRegisterErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -102,7 +115,13 @@ const Register = () => {
         )}
 
         <InputField
-          {...register("password", { required: true })}
+          {...register("password", {
+            required: true,
+            minLength: {
+              value: 8,
+              message: "Password must be at least 8 characters",
+            },
+          })}
           id="password"
           name="password"
           label="Password"
@@ -111,7 +130,9 @@ const Register = () => {
           isPassword
         />
         {errors.password && (
-          <span className="text-red-500 text-sm">Password is required</span>
+          <span className="text-red-500 text-sm">
+            {errors.password.message || "Password is required"}
+          </span>
         )}
 
         <InputField
@@ -132,7 +153,9 @@ const Register = () => {
           </span>
         )}
 
-        <Button type="submit">Register</Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Registering..." : "Register"}
+        </Button>
       </form>
 
       <nav className="mt-2 text-[0.95rem] text-center text-gray-500 flex flex-col gap-1.5 sm:mt-4">
