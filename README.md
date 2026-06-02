@@ -125,8 +125,7 @@ Live Demo:
 ---
 
 ## 📄 License
-
-This project is created for personal learning and portfolio purposes.
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
 ---
 
