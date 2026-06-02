@@ -1,4 +1,3 @@
-import { useSelector, useDispatch } from "react-redux";
 import { toast } from "react-toastify";
 import { useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
@@ -9,14 +8,14 @@ import { InputField } from "@components/molecules";
 import { Button } from "@components/atoms";
 import { PasswordIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
-
-import { usersAction } from "@redux/slices/userRegistered";
+import api from "@utils/axios";
 
 const ResetPassword = () => {
   usePageTitle("Reset Password");
   const navigate = useNavigate();
-  const [searchParams, _] = useSearchParams();
-  const dispatch = useDispatch();
+  const [searchParams] = useSearchParams();
+  const resetToken = searchParams.get("token");
+  const hasResetToken = Boolean(resetToken);
 
   const {
     register,
@@ -26,33 +25,45 @@ const ResetPassword = () => {
     getValues,
   } = useForm();
 
-  const { users } = useSelector((state) => state.users);
-  const handleResetPassword = (form) => {
-    const email = searchParams.get("email");
-    const userIndex = users.findIndex((user) => user.email === email);
-    if (userIndex !== -1) {
-      // Update password in the store (this is a mock, in real app should call API)
-      dispatch(
-        usersAction.updatePassword({
-          id: users[userIndex].id,
-          password: form.newPassword,
-        }),
+  const handleResetPassword = async (form) => {
+    if (!hasResetToken) {
+      toast.error("Invalid reset password link");
+      return;
+    }
+
+    try {
+      await api.post(
+        "/auth/reset-password",
+        { new_password: form.newPassword },
+        {
+          headers: {
+            "X-Reset-Token": resetToken,
+          },
+        },
       );
+
       reset();
       toast.success("Password has been reset successfully!");
       setTimeout(() => {
         navigate("/login", { replace: true });
       }, 1500);
-    } else {
-      toast.error("User not found");
+    } catch (error) {
+      toast.error(error.data?.message || "Failed to reset password");
     }
   };
+
   return (
     <AuthMiddleLayout>
       <AuthHeader
         title="Reset Password 👋"
-        subtitle="Enter your email to reset your password."
+        subtitle="Enter your new password."
       />
+
+      {!hasResetToken && (
+        <p className="text-sm text-center text-red-500">
+          Invalid reset password link.
+        </p>
+      )}
 
       <form
         onSubmit={handleSubmit(handleResetPassword)}
@@ -68,6 +79,7 @@ const ResetPassword = () => {
           placeholder="Enter Your New Password"
           iconLeft={<PasswordIcon />}
           isPassword
+          disabled={!hasResetToken}
           noValidate
         />
         {errors.newPassword && (
@@ -88,6 +100,7 @@ const ResetPassword = () => {
           placeholder="Re-Type Your New Password"
           iconLeft={<PasswordIcon />}
           isPassword
+          disabled={!hasResetToken}
           noValidate
         />
         {errors.confirmPassword && (
@@ -96,7 +109,9 @@ const ResetPassword = () => {
           </p>
         )}
 
-        <Button type="submit">Submit</Button>
+        <Button type="submit" disabled={!hasResetToken}>
+          Submit
+        </Button>
       </form>
 
       <nav className="mt-2 text-[0.95rem] text-center text-gray-500 sm:mt-4">

@@ -1,6 +1,4 @@
-import { useSelector } from "react-redux";
 import { toast } from "react-toastify";
-import { useNavigate } from "react-router";
 
 import { AuthMiddleLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -8,30 +6,31 @@ import { InputField } from "@components/molecules";
 import { Button } from "@components/atoms";
 import { MailIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
+import api from "@utils/axios";
 
 const ForgotPassword = () => {
   usePageTitle("Forgot Password");
-  const navigate = useNavigate();
 
-  const { users } = useSelector((state) => state.users);
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const email = e.target.email.value;
-    const user = users.find((user) => user.email === email);
-    if (user) {
-      toast.success(`A new password has been sent to ${email}`);
-      setTimeout(() => {
-        navigate(`/reset-password?email=${email}`, { replace: true });
-      }, 1500);
-    } else {
-      toast.error("Email not found");
+
+    try {
+      await api.post("/auth/forgot-password", { email });
+      toast.success(
+        "If the email is registered, reset instructions have been sent",
+      );
+      e.target.reset();
+    } catch (error) {
+      toast.error(error.data?.message || "Failed to send reset instructions");
     }
   };
+
   return (
     <AuthMiddleLayout>
       <AuthHeader
         title="Fill Out Form Correctly 👋"
-        subtitle="We will send new password to your email."
+        subtitle="We will send reset instructions to your email."
       />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
