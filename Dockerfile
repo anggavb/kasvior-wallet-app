@@ -2,9 +2,12 @@ FROM node:24.16.0-alpine AS builder
 
 WORKDIR /app
 
-ENV VITE_ENV=production
-ENV VITE_APP_TITLE="Kasvior Wallet"
-ENV VITE_API_BASE_URL=http://localhost:8080/api
+ARG VITE_ENV=production
+ARG VITE_APP_TITLE="Kasvior Wallet"
+ARG VITE_API_BASE_URL=http://localhost:8080
+ENV VITE_ENV=$VITE_ENV
+ENV VITE_APP_TITLE=$VITE_APP_TITLE
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 COPY package.json package-lock.json ./
 RUN npm ci
