@@ -1,83 +1,83 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { usePageTitle } from "@hooks";
 import {
   Widget,
   TransactionHistory,
   FinancialChart,
 } from "@components/molecules";
-import { listWidget, dataFinancialChart, formatRupiah, api } from "@utils";
+import { formatRupiah } from "@utils";
+import {
+  fetchTransactionReport,
+  fetchWallet,
+} from "@redux/slices/account";
+import { fetchDashboardHistory } from "@redux/slices/transaction";
 import {
   MoneyInsertIcon,
   TransferIcon,
   BalanceIcon,
   StonkIcon,
+  IncomeIcon,
+  ExpenseIcon,
+  DownStonkIcon,
 } from "@components/atoms/icons";
 
 function Dashboard() {
   usePageTitle("Dashboard");
   const [chartType, setChartType] = useState("All");
+  const dispatch = useDispatch();
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const { wallet, report } = useSelector((state) => state.account);
+  const dashboardHistory = useSelector(
+    (state) => state.transaction.dashboardHistory,
+  );
   const historyRequestKey = userLoggedIn?.token || "";
-  const [historyState, setHistoryState] = useState({
-    key: "",
-    items: [],
-    error: "",
-  });
+  const reportType = chartType.toLowerCase();
+  const reportRequestKey = userLoggedIn?.token
+    ? `${userLoggedIn.token}:${reportType}`
+    : "";
 
   useEffect(() => {
     if (!userLoggedIn?.token) {
       return;
     }
 
-    const controller = new AbortController();
-    let isCurrent = true;
+    dispatch(fetchWallet());
+    dispatch(fetchDashboardHistory({ page: 1, limit: 10, requestKey: historyRequestKey }));
+  }, [dispatch, historyRequestKey, userLoggedIn?.token]);
 
-    api
-      .get("/transaction/history", {
-        params: {
-          page: 1,
-          limit: 10,
-        },
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${userLoggedIn.token}`,
-        },
-      })
-      .then((response) => {
-        if (!isCurrent) {
-          return;
-        }
+  useEffect(() => {
+    if (!userLoggedIn?.token) {
+      return;
+    }
 
-        setHistoryState({
-          key: historyRequestKey,
-          items: response.data?.items ?? [],
-          error: "",
-        });
-      })
-      .catch((err) => {
-        if (!isCurrent || err.name === "CanceledError") {
-          return;
-        }
+    dispatch(
+      fetchTransactionReport({
+        duration: "7d",
+        type: reportType,
+        requestKey: reportRequestKey,
+      }),
+    );
+  }, [dispatch, reportRequestKey, reportType, userLoggedIn?.token]);
 
-        setHistoryState({
-          key: historyRequestKey,
-          items: [],
-          error: err.data?.message || "Failed to load history.",
-        });
-      });
-
-    return () => {
-      isCurrent = false;
-      controller.abort();
-    };
-  }, [historyRequestKey, userLoggedIn?.token]);
-
-  const history = historyState.items;
+  const walletData = wallet.data || {
+    balance: userLoggedIn?.balance || 0,
+    income: 0,
+    expense: 0,
+  };
+  const history = dashboardHistory.items;
   const historyLoading =
-    Boolean(userLoggedIn?.token) && historyState.key !== historyRequestKey;
-  const historyError = historyState.error;
+    Boolean(userLoggedIn?.token) &&
+    (dashboardHistory.status === "loading" ||
+      dashboardHistory.requestKey !== historyRequestKey);
+  const historyError =
+    dashboardHistory.status === "failed" ? dashboardHistory.error : "";
+  const chartLoading =
+    Boolean(userLoggedIn?.token) &&
+    (report.status === "loading" || report.requestKey !== reportRequestKey);
+  const chartError = report.status === "failed" ? report.error : "";
+  const chartData = report.data;
 
   return (
     <>
@@ -89,7 +89,7 @@ function Dashboard() {
             widget={{
               icon: BalanceIcon,
               name: "Balance",
-              content: formatRupiah(userLoggedIn?.balance || 0),
+              content: formatRupiah(walletData.balance || 0),
               footer: {
                 growth: "+0.00%",
                 icon: StonkIcon,
@@ -100,15 +100,9 @@ function Dashboard() {
           <Widget
             key="income"
             widget={{
-              icon: BalanceIcon,
+              icon: IncomeIcon,
               name: "Income",
-              content: formatRupiah(
-                userLoggedIn?.history
-                  ? userLoggedIn.history
-                      .filter((item) => item.type === "top-up")
-                      .reduce((sum, item) => sum + item.amount, 0)
-                  : 0,
-              ),
+              content: formatRupiah(walletData.income || 0),
               footer: {
                 growth: "+0.00%",
                 icon: StonkIcon,
@@ -116,9 +110,19 @@ function Dashboard() {
               },
             }}
           />
-          {listWidget.map((widget) => (
-            <Widget key={widget.name} widget={widget} />
-          ))}
+          <Widget
+            key="expense"
+            widget={{
+              icon: ExpenseIcon,
+              name: "Expense",
+              content: formatRupiah(walletData.expense || 0),
+              footer: {
+                growth: "-0.00%",
+                icon: DownStonkIcon,
+                color: "text-red-600",
+              },
+            }}
+          />
         </div>
 
         <section className="flex flex-col items-start gap-4 border border-gray-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
@@ -160,7 +164,15 @@ function Dashboard() {
             </div>
 
             <div className="relative flex h-50 gap-4 sm:h-75">
-              <FinancialChart data={dataFinancialChart} chartType={chartType} />
+              {chartLoading ? (
+                <p className="text-sm font-medium text-gray-500">
+                  Loading chart...
+                </p>
+              ) : chartError ? (
+                <p className="text-sm font-medium text-red-500">{chartError}</p>
+              ) : (
+                <FinancialChart data={chartData} chartType={chartType} />
+              )}
             </div>
           </div>
         </section>

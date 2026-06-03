@@ -1,4 +1,5 @@
 import { toast } from "react-toastify";
+import { useDispatch, useSelector } from "react-redux";
 
 import { AuthMiddleLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -6,23 +7,29 @@ import { InputField } from "@components/molecules";
 import { Button } from "@components/atoms";
 import { MailIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
-import api from "@utils/axios";
+import { forgotPassword } from "@redux/slices/userLogin";
+import { getThunkErrorMessage } from "@redux/api";
 
 const ForgotPassword = () => {
   usePageTitle("Forgot Password");
+  const dispatch = useDispatch();
+  const { status } = useSelector((state) => state.userLogin);
+  const isSubmitting = status === "loading";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const email = e.target.email.value;
 
     try {
-      await api.post("/auth/forgot-password", { email });
+      await dispatch(forgotPassword({ email })).unwrap();
       toast.success(
         "If the email is registered, reset instructions have been sent",
       );
       e.target.reset();
     } catch (error) {
-      toast.error(error.data?.message || "Failed to send reset instructions");
+      toast.error(
+        getThunkErrorMessage(error, "Failed to send reset instructions"),
+      );
     }
   };
 
@@ -43,7 +50,9 @@ const ForgotPassword = () => {
           required
         />
 
-        <Button type="submit">Submit</Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Submitting..." : "Submit"}
+        </Button>
       </form>
 
       <nav className="mt-2 text-[0.95rem] text-center text-gray-500 sm:mt-4">

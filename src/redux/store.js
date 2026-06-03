@@ -1,7 +1,7 @@
-import { configureStore } from "@reduxjs/toolkit";
+import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import {
   persistStore,
-  persistCombineReducers,
+  persistReducer,
   FLUSH,
   PAUSE,
   PERSIST,
@@ -11,20 +11,25 @@ import {
 } from "redux-persist";
 import storage from "redux-persist/es/storage";
 
-import userRegisteredReducer from "./slices/userRegistered";
 import userLoginReducer from "./slices/userLogin";
+import accountReducer from "./slices/account";
+import transactionReducer from "./slices/transaction";
 import { getEnv } from '@utils';
 
-const persistConfig = {
-  key: "users",
+const userLoginPersistConfig = {
+  key: "userLogin",
   storage,
+  whitelist: ["user"],
 };
 
+const rootReducer = combineReducers({
+  userLogin: persistReducer(userLoginPersistConfig, userLoginReducer),
+  account: accountReducer,
+  transaction: transactionReducer,
+});
+
 const store = configureStore({
-  reducer: persistCombineReducers(persistConfig, {
-    users: userRegisteredReducer,
-    userLogin: userLoginReducer,
-  }),
+  reducer: rootReducer,
   devTools: getEnv.env === "development",
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

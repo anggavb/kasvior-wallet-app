@@ -2,15 +2,16 @@ import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { PinInput } from "@components/molecules";
 import { useLoadSpinner } from "@hooks";
-import { api } from "@utils";
 
-import { userLoginAction } from "@redux/slices/userLogin";
+import { confirmTransferPin } from "@redux/slices/transaction";
 
 function PinModal({ isOpen, onNext, onFailed, user }) {
   const dispatch = useDispatch();
   const toggleSpinner = useLoadSpinner();
   const [pin, setPin] = useState("");
   const { user: userLogin } = useSelector((state) => state.userLogin);
+  const { status } = useSelector((state) => state.transaction.pinConfirm);
+  const isSubmitting = status === "loading";
   if (!isOpen) return null;
 
   const handlePinChange = (pinChange) => {
@@ -26,28 +27,15 @@ function PinModal({ isOpen, onNext, onFailed, user }) {
     toggleSpinner();
 
     try {
-      await api.post(
-        "/users/me/pin/check",
-        {
+      await dispatch(
+        confirmTransferPin({
           pin,
-          transaction_id: user.transactionId,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${userLogin.token}`,
-          },
-        },
-      );
+          transactionId: user.transactionId,
+          amount: user.data.amount,
+        }),
+      ).unwrap();
 
       onNext();
-
-      if (userLogin.balance != null) {
-        dispatch(
-          userLoginAction.updated({
-            balance: Number(userLogin.balance) - Number(user.data.amount),
-          }),
-        );
-      }
     } catch {
       onFailed();
     }
@@ -74,9 +62,10 @@ function PinModal({ isOpen, onNext, onFailed, user }) {
 
           <button
             onClick={handleCheckPin}
+            disabled={isSubmitting}
             className="flex w-full cursor-pointer justify-center rounded-lg border-none bg-blue-700 p-4 text-base font-semibold text-white transition-all duration-200 hover:bg-blue-900 active:scale-[0.98]"
           >
-            Next
+            {isSubmitting ? "Checking..." : "Next"}
           </button>
 
           <div className="mt-6 text-center text-sm text-gray-500 sm:text-[0.9rem]">

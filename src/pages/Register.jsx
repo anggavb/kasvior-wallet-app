@@ -1,7 +1,7 @@
-import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "react-toastify";
+import { useDispatch, useSelector } from "react-redux";
 
 import { AuthLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -14,48 +14,35 @@ import {
   PasswordIcon,
 } from "@components/atoms/icons";
 import { usePageTitle, useRedirectIfLoggedIn } from "@hooks";
-import { api } from "@utils";
+import { registerUser } from "@redux/slices/userLogin";
+import { getThunkErrorMessage } from "@redux/api";
 
 const Register = () => {
   usePageTitle("Register");
   useRedirectIfLoggedIn();
 
   const navigate = useNavigate();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const dispatch = useDispatch();
+  const { status } = useSelector((state) => state.userLogin);
+  const isSubmitting = status === "loading";
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     formState: { errors },
   } = useForm();
 
-  const password = watch("password");
-
-  const getRegisterErrorMessage = (error) => {
-    const responseData = error.response?.data || error.data;
-
-    if (responseData?.message) {
-      return responseData.message;
-    }
-
-    if (responseData?.errors) {
-      return Object.values(responseData.errors).filter(Boolean).join(", ");
-    }
-
-    return "Registration failed. Please try again.";
-  };
+  const password = useWatch({ control, name: "password" });
 
   const handleRegister = async ({ email, password }) => {
-    setIsSubmitting(true);
-
     try {
-      const response = await api.post("/auth/register", { email, password });
+      const response = await dispatch(registerUser({ email, password })).unwrap();
       toast.success(response.message || "Registration successful! You can now log in.");
       navigate("/login", { replace: true });
     } catch (error) {
-      toast.error(getRegisterErrorMessage(error));
-    } finally {
-      setIsSubmitting(false);
+      toast.error(
+        getThunkErrorMessage(error, "Registration failed. Please try again."),
+      );
     }
   };
 

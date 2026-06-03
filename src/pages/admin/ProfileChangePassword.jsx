@@ -7,7 +7,8 @@ import { InputField } from "@components/molecules";
 import { Button } from "@components/atoms";
 import { ProfileIcon, PasswordIcon } from "@components/atoms/icons";
 
-import { usersAction } from "@redux/slices/userRegistered";
+import { updatePassword } from "@redux/slices/account";
+import { getThunkErrorMessage } from "@redux/api";
 
 const ProfileChangePassword = () => {
   const navigate = useNavigate();
@@ -19,27 +20,27 @@ const ProfileChangePassword = () => {
     getValues,
   } = useForm();
 
-  const { users } = useSelector((state) => state.users);
-  const { user: userLogin } = useSelector((state) => state.userLogin);
+  const { status } = useSelector((state) => state.account.password);
+  const isSubmitting = status === "loading";
   const dispatch = useDispatch();
 
-  const checkExistingPassword = (value) => {
-    const currentUser = users.find((user) => user.id === userLogin.id);
-    return value === currentUser.password || "Existing password is incorrect";
-  };
+  const handleChangePassword = async (data) => {
+    try {
+      await dispatch(
+        updatePassword({
+          currentPassword: data.existingPassword,
+          newPassword: data.newPassword,
+        }),
+      ).unwrap();
 
-  const handleChangePassword = (data) => {
-    dispatch(
-      usersAction.updatePassword({
-        id: userLogin.id,
-        password: data.newPassword,
-      }),
-    );
-    reset();
-    toast.success("Password changed successfully!");
-    setTimeout(() => {
-      navigate("/admin/profile", { replace: true });
-    }, 1500);
+      reset();
+      toast.success("Password changed successfully!");
+      setTimeout(() => {
+        navigate("/admin/profile", { replace: true });
+      }, 1500);
+    } catch (error) {
+      toast.error(getThunkErrorMessage(error, "Failed to update password"));
+    }
   };
   return (
     <>
@@ -64,7 +65,6 @@ const ProfileChangePassword = () => {
               <InputField
                 {...register("existingPassword", {
                   required: "Existing password is required",
-                  validate: checkExistingPassword,
                 })}
                 name="existingPassword"
                 id="existing-password"
@@ -122,8 +122,9 @@ const ProfileChangePassword = () => {
               <Button
                 type="submit"
                 className="w-full sm:w-auto px-8 mt-2 py-3.5 ml-auto"
+                disabled={isSubmitting}
               >
-                Submit
+                {isSubmitting ? "Submitting..." : "Submit"}
               </Button>
             </form>
           </div>

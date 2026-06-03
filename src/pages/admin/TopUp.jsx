@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "react-toastify";
 
@@ -13,11 +13,15 @@ import {
 import { RadioMenu, PageHeader } from "@components/molecules";
 import { Button } from "@components/atoms/";
 import { usePageTitle } from "@hooks";
-import { api, formatRupiah } from "@utils";
+import { formatRupiah } from "@utils";
 import { profile } from "@/assets/images";
 
 import { useDispatch, useSelector } from "react-redux";
-import { userLoginAction } from "@redux/slices/userLogin";
+import {
+  createTopup,
+  fetchPaymentMethods,
+} from "@redux/slices/transaction";
+import { getThunkErrorMessage } from "@redux/api";
 import useLogoutStore from "@zustand/store";
 
 const BANK_DISCOUNT = 4000;
@@ -53,17 +57,16 @@ const toPaymentMethodOption = (paymentMethod) => ({
 function TopUp() {
   usePageTitle("Top Up");
   const dispatch = useDispatch();
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const { changeTitle, changeMessages, toggleModalLogout, setHandleConfirm } =
     useLogoutStore((state) => state);
 
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const paymentMethodState = useSelector(
+    (state) => state.transaction.paymentMethods,
+  );
+  const { status: topupStatus } = useSelector((state) => state.transaction.topup);
+  const isSubmitting = topupStatus === "loading";
   const paymentMethodRequestKey = userLoggedIn?.token || "";
-  const [paymentMethodState, setPaymentMethodState] = useState({
-    key: "",
-    items: [],
-    error: "",
-  });
 
   const {
     register,
@@ -84,52 +87,8 @@ function TopUp() {
       return;
     }
 
-    const controller = new AbortController();
-    let isCurrent = true;
-
-    api
-      .get("/transaction/payment-methods", {
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${userLoggedIn.token}`,
-        },
-      })
-      .then((response) => {
-        if (!isCurrent) {
-          return;
-        }
-
-        const methods = (response.data?.items ?? []).map(toPaymentMethodOption);
-
-        setPaymentMethodState({
-          key: paymentMethodRequestKey,
-          items: methods,
-          error: "",
-        });
-
-        if (methods.length > 0) {
-          setValue("payment_method", methods[0].value, {
-            shouldValidate: true,
-          });
-        }
-      })
-      .catch((err) => {
-        if (!isCurrent || err.name === "CanceledError") {
-          return;
-        }
-
-        setPaymentMethodState({
-          key: paymentMethodRequestKey,
-          items: [],
-          error: err.data?.message || "Failed to load payment methods.",
-        });
-      });
-
-    return () => {
-      isCurrent = false;
-      controller.abort();
-    };
-  }, [paymentMethodRequestKey, setValue, userLoggedIn?.token]);
+    dispatch(fetchPaymentMethods({ requestKey: paymentMethodRequestKey }));
+  }, [dispatch, paymentMethodRequestKey, userLoggedIn?.token]);
 
   const watchNominal = useWatch({
     control,
@@ -141,10 +100,25 @@ function TopUp() {
     name: "payment_method",
   });
 
-  const paymentMethods = paymentMethodState.items;
+  const paymentMethods = useMemo(
+    () => paymentMethodState.items.map(toPaymentMethodOption),
+    [paymentMethodState.items],
+  );
+
+  useEffect(() => {
+    if (paymentMethods.length > 0 && !watchPaymentMethod) {
+      setValue("payment_method", paymentMethods[0].value, {
+        shouldValidate: true,
+      });
+    }
+  }, [paymentMethods, setValue, watchPaymentMethod]);
+
   const isPaymentMethodLoading =
     Boolean(userLoggedIn?.token) &&
-    paymentMethodState.key !== paymentMethodRequestKey;
+    (paymentMethodState.status === "loading" ||
+      paymentMethodState.requestKey !== paymentMethodRequestKey);
+  const paymentMethodError =
+    paymentMethodState.status === "failed" ? paymentMethodState.error : "";
   const selectedPaymentMethod = paymentMethods.find(
     (method) => method.value === watchPaymentMethod,
   );
@@ -175,40 +149,25 @@ function TopUp() {
 
     setHandleConfirm(async () => {
       toggleModalLogout();
-      setIsSubmitting(true);
 
       try {
-        await api.post(
-          "/transaction/topup",
-          {
-            type: "topup",
-            payment_method_id: selectedPaymentMethod.id,
+        await dispatch(
+          createTopup({
+            paymentMethodId: selectedPaymentMethod.id,
             amount: nominal,
             discount,
             tax,
-            sub_total: total,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${userLoggedIn.token}`,
-            },
-          },
-        );
-
-        dispatch(
-          userLoginAction.updated({
-            balance: Number(userLoggedIn?.balance || 0) + nominal,
+            subTotal: total,
           }),
-        );
+        ).unwrap();
+
         reset({
           nominal: "",
           payment_method: paymentMethods[0]?.value || "",
         });
         toast.success("Top up successful!");
       } catch (err) {
-        toast.error(err.data?.message || "Top up failed.");
-      } finally {
-        setIsSubmitting(false);
+        toast.error(getThunkErrorMessage(err, "Top up failed."));
       }
     });
 
@@ -305,9 +264,9 @@ function TopUp() {
                   <p className="text-sm font-medium text-gray-500">
                     Loading payment methods...
                   </p>
-                ) : paymentMethodState.error ? (
+                ) : paymentMethodError ? (
                   <p className="text-sm font-medium text-red-500">
-                    {paymentMethodState.error}
+                    {paymentMethodError}
                   </p>
                 ) : paymentMethods.length > 0 ? (
                   paymentMethods.map((method, idx) => (

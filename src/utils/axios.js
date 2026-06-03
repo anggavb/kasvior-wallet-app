@@ -5,9 +5,6 @@ import getEnv from "./getEnv";
 const api = axios.create({
   baseURL: getEnv.apiBaseUrl,
   timeout: 10000,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 api.interceptors.response.use(

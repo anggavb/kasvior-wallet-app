@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
-import { useSelector } from "react-redux";
+import { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { useSearchParams } from "react-router";
 import { usePageTitle } from "@hooks";
 import { HistoryIcon } from "@components/atoms/icons";
 import { PageHeader, SearchBox, Pagination } from "@components/molecules";
-import { api, normalizeHistoryTransaction } from "@utils";
+import { normalizeHistoryTransaction } from "@utils";
 import { profile } from "@/assets/images";
+import { fetchHistory } from "@redux/slices/transaction";
 
 const PER_PAGE = 5;
 
@@ -17,7 +18,9 @@ const getPageFromParams = (searchParams) => {
 function History() {
   usePageTitle("History");
 
+  const dispatch = useDispatch();
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const historyState = useSelector((state) => state.transaction.history);
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const currentPage = getPageFromParams(searchParams);
@@ -25,84 +28,20 @@ function History() {
     ? `${userLoggedIn.token}:${query}:${currentPage}`
     : "";
 
-  const [historyState, setHistoryState] = useState({
-    key: "",
-    history: {
-      items: [],
-      meta: {
-        page: 1,
-        limit: PER_PAGE,
-        total: 0,
-        total_pages: 0,
-      },
-    },
-    error: "",
-  });
-
   useEffect(() => {
     if (!userLoggedIn?.token) {
       return;
     }
 
-    const controller = new AbortController();
-    let isCurrent = true;
-
-    api
-      .get("/transaction/history", {
-        params: {
-          q: query,
-          page: currentPage,
-          limit: PER_PAGE,
-        },
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${userLoggedIn.token}`,
-        },
-      })
-      .then((response) => {
-        if (!isCurrent) {
-          return;
-        }
-
-        setHistoryState({
-          key: requestKey,
-          history: response.data ?? {
-            items: [],
-            meta: {
-              page: currentPage,
-              limit: PER_PAGE,
-              total: 0,
-              total_pages: 0,
-            },
-          },
-          error: "",
-        });
-      })
-      .catch((err) => {
-        if (!isCurrent || err.name === "CanceledError") {
-          return;
-        }
-
-        setHistoryState({
-          key: requestKey,
-          history: {
-            items: [],
-            meta: {
-              page: currentPage,
-              limit: PER_PAGE,
-              total: 0,
-              total_pages: 0,
-            },
-          },
-          error: err.data?.message || "Failed to load transaction history.",
-        });
-      });
-
-    return () => {
-      isCurrent = false;
-      controller.abort();
-    };
-  }, [currentPage, query, requestKey, userLoggedIn?.token]);
+    dispatch(
+      fetchHistory({
+        q: query,
+        page: currentPage,
+        limit: PER_PAGE,
+        requestKey,
+      }),
+    );
+  }, [currentPage, dispatch, query, requestKey, userLoggedIn?.token]);
 
   const handleSearch = (e) => {
     const value = e.target.value;
@@ -130,13 +69,16 @@ function History() {
     setSearchParams(nextParams);
   };
 
-  const history = historyState.history;
+  const history = historyState.data;
   const total = history.meta?.total ?? 0;
   const transactions = history.items ?? [];
   const isLoading =
-    Boolean(userLoggedIn?.token) && historyState.key !== requestKey;
+    Boolean(userLoggedIn?.token) &&
+    (historyState.status === "loading" || historyState.requestKey !== requestKey);
   const error = userLoggedIn?.token
-    ? historyState.error
+    ? historyState.status === "failed"
+      ? historyState.error
+      : ""
     : "Please login again to load transaction history.";
 
   return (

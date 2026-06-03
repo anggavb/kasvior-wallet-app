@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router";
 import { useSelector, useDispatch } from "react-redux";
@@ -10,17 +10,16 @@ import { profile } from "@/assets/images";
 import { PageHeader, FormField } from "@components/molecules";
 import { Button } from "@components/atoms";
 
-import { userLoginAction } from "@redux/slices/userLogin";
-import { usersAction } from "@redux/slices/userRegistered";
+import { fetchProfile, updateProfile } from "@redux/slices/account";
+import { getThunkErrorMessage } from "@redux/api";
 
 import { useLoadSpinner } from "@hooks";
 
 function Profile() {
   const toggleSpinner = useLoadSpinner();
   const { user: userLogin } = useSelector((state) => state.userLogin);
-  const [avatarPreview, setAvatarPreview] = useState(
-    userLogin && userLogin.avatar ? userLogin.avatar : profile,
-  );
+  const [avatarPreview, setAvatarPreview] = useState();
+  const [avatarFile, setAvatarFile] = useState(null);
   const fileInputRef = useRef(null);
 
   const {
@@ -31,20 +30,32 @@ function Profile() {
   } = useForm();
 
   const dispatch = useDispatch();
+  const { status: updateStatus } = useSelector(
+    (state) => state.account.profileUpdate,
+  );
+  const isSubmitting = updateStatus === "loading";
+
+  useEffect(() => {
+    if (userLogin?.token) {
+      dispatch(fetchProfile());
+    }
+  }, [dispatch, userLogin?.token]);
+
+  useEffect(() => {
+    reset({
+      name: userLogin?.name || "",
+      phone: userLogin?.phone || "",
+    });
+  }, [reset, userLogin?.name, userLogin?.phone]);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file) {
       toggleSpinner();
+      setAvatarFile(file);
       const reader = new FileReader();
       reader.onload = (e) => {
         setAvatarPreview(e.target.result);
-        dispatch(
-          userLoginAction.updated({ ...userLogin, avatar: e.target.result }),
-        );
-        dispatch(
-          usersAction.updateUser({ ...userLogin, avatar: e.target.result }),
-        );
       };
       reader.readAsDataURL(file);
     }
@@ -53,25 +64,32 @@ function Profile() {
   const handleDeleteAvatar = () => {
     toggleSpinner();
     setAvatarPreview(null);
-    dispatch(userLoginAction.updated({ ...userLogin, avatar: null }));
-    dispatch(usersAction.updateUser({ ...userLogin, avatar: null }));
+    setAvatarFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleUpdateProfile = (data) => {
-    const updatedUser = {
-      ...userLogin,
-      name: data.name,
-      phone: data.phone,
-    };
+  const handleUpdateProfile = async (data) => {
+    try {
+      await dispatch(
+        updateProfile({
+          name: data.name,
+          phone: data.phone,
+          photo: avatarFile,
+        }),
+      ).unwrap();
 
-    dispatch(userLoginAction.updated(updatedUser));
-    dispatch(usersAction.updateUser(updatedUser));
-    toast.success("Profile updated successfully");
-    reset();
+      setAvatarFile(null);
+      setAvatarPreview(undefined);
+      toast.success("Profile updated successfully");
+    } catch (error) {
+      toast.error(getThunkErrorMessage(error, "Failed to update profile"));
+    }
   };
 
   usePageTitle("Profile");
+  const displayedAvatar =
+    avatarPreview === undefined ? userLogin?.avatar || profile : avatarPreview;
+
   return (
     <>
       <main className="page-main md:col-span-1 lg:col-span-2">
@@ -86,9 +104,9 @@ function Profile() {
             <p className="form-label">Profile Picture</p>
             <div className="flex flex-wrap items-start gap-5">
               <div className="relative flex items-center justify-center shrink-0 w-20 h-20 overflow-hidden bg-gray-100 border border-gray-200 rounded-xl sm:w-24 sm:h-24">
-                {avatarPreview ? (
+                {displayedAvatar ? (
                   <img
-                    src={avatarPreview}
+                    src={displayedAvatar}
                     alt="Profile Preview"
                     className="object-cover w-full h-full rounded-xl"
                   />
@@ -298,8 +316,13 @@ function Profile() {
             </div>
 
             {/* Submit */}
-            <Button type="submit" id="submit-profile" className="mt-2">
-              Submit
+            <Button
+              type="submit"
+              id="submit-profile"
+              className="mt-2"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Submitting..." : "Submit"}
             </Button>
           </form>
         </div>

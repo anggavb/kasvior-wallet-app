@@ -1,8 +1,7 @@
-import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 
 import { AuthLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -15,38 +14,12 @@ import {
   PasswordIcon,
 } from "@components/atoms/icons";
 import { usePageTitle, useRedirectIfLoggedIn } from "@hooks";
-import { userLoginAction } from "@redux/slices/userLogin";
-import { api } from "@utils";
-
-const normalizeAuthUser = (user) => ({
-  id: user.id,
-  email: user.email,
-  name: user.fullname || "",
-  phone: user.phone_number || "",
-  avatar: user.photo || "",
-  isVerified: Boolean(user.is_verified),
-  hasPin: Boolean(user.has_pin),
-  token: user.token,
-});
-
-const getLoginErrorMessage = (error) => {
-  const responseData = error.response?.data || error.data;
-
-  if (responseData?.message) {
-    return responseData.message;
-  }
-
-  if (responseData?.errors) {
-    return Object.values(responseData.errors).filter(Boolean).join(", ");
-  }
-
-  return "Invalid email or password";
-};
+import { loginUser } from "@redux/slices/userLogin";
+import { getThunkErrorMessage } from "@redux/api";
 
 const Login = () => {
   usePageTitle("Login");
   useRedirectIfLoggedIn();
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
     register,
@@ -55,19 +28,18 @@ const Login = () => {
   } = useForm();
 
   const dispatch = useDispatch();
+  const { status } = useSelector((state) => state.userLogin);
+  const isSubmitting = status === "loading";
 
   const navigate = useNavigate();
   const handleLogin = async (data) => {
-    setIsSubmitting(true);
-
     try {
-      const response = await api.post("/auth", {
-        email: data.email,
-        password: data.password,
-      });
-      const loggedInUser = normalizeAuthUser(response.data);
-
-      dispatch(userLoginAction.login(loggedInUser));
+      const loggedInUser = await dispatch(
+        loginUser({
+          email: data.email,
+          password: data.password,
+        }),
+      );
 
       if (!loggedInUser.hasPin) {
         navigate("/enter-pin", { replace: true });
@@ -76,11 +48,11 @@ const Login = () => {
       }
 
       navigate("/admin", { replace: true });
-      toast.success(`Welcome back, ${loggedInUser.name || loggedInUser.email}!`);
+      toast.success(
+        `Welcome back, ${loggedInUser.name || loggedInUser.email}!`,
+      );
     } catch (error) {
-      toast.error(getLoginErrorMessage(error));
-    } finally {
-      setIsSubmitting(false);
+      toast.error(getThunkErrorMessage(error, "Invalid email or password"));
     }
   };
 
@@ -94,14 +66,14 @@ const Login = () => {
         subtitle="Fill out the form correctly or you can login with several options."
       />
 
-      <div className="flex flex-col gap-4 mt-2">
+      <div className="mt-2 flex flex-col gap-4">
         <SocialButton icon={<GoogleIcon />}>Sign In With Google</SocialButton>
         <SocialButton icon={<FacebookIcon />}>
           Sign In With Facebook
         </SocialButton>
       </div>
 
-      <div className="flex items-center gap-4 text-[0.85rem] text-gray-500 my-2 before:content-[''] before:flex-1 before:border-b before:border-neutral-200 after:content-[''] after:flex-1 after:border-b after:border-neutral-200">
+      <div className="my-2 flex items-center gap-4 text-[0.85rem] text-gray-500 before:flex-1 before:border-b before:border-neutral-200 before:content-[''] after:flex-1 after:border-b after:border-neutral-200 after:content-['']">
         <span>Or</span>
       </div>
 
@@ -126,7 +98,7 @@ const Login = () => {
           iconLeft={<MailIcon />}
         />
         {errors.email && (
-          <span className="text-red-500 text-sm">
+          <span className="text-sm text-red-500">
             {errors.email.message || "Email is required"}
           </span>
         )}
@@ -141,7 +113,7 @@ const Login = () => {
           isPassword
         />
         {errors.password && (
-          <span className="text-red-500 text-sm">
+          <span className="text-sm text-red-500">
             {errors.password.message || "Password is required"}
           </span>
         )}
@@ -151,12 +123,12 @@ const Login = () => {
         </Button>
       </form>
 
-      <nav className="mt-2 text-[0.95rem] text-center text-gray-500 flex flex-col gap-1.5 sm:mt-4">
+      <nav className="mt-2 flex flex-col gap-1.5 text-center text-[0.95rem] text-gray-500 sm:mt-4">
         <p>
           Not Have An Account?{" "}
           <a
             href="/register"
-            className="font-semibold transition-colors text-blue-700 hover:underline"
+            className="font-semibold text-blue-700 transition-colors hover:underline"
           >
             Register
           </a>
@@ -165,7 +137,7 @@ const Login = () => {
           Or Forgot Your Password?{" "}
           <a
             href="/forgot-password"
-            className="font-semibold transition-colors text-blue-700 hover:underline"
+            className="font-semibold text-blue-700 transition-colors hover:underline"
           >
             Click Here
           </a>

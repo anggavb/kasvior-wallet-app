@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { usePageTitle } from "@hooks";
 import { TransferIcon } from "@components/atoms/icons";
 import { PageHeader, SearchBox, Stepper } from "@components/molecules";
 import { useLoadSpinner } from "@hooks";
-import { api, getApiAssetUrl } from "@utils";
+import { getApiAssetUrl } from "@utils";
 import { profile } from "@/assets/images";
+import { fetchReceivers } from "@redux/slices/transaction";
 
 const TRANSFER_STEPS = ["Find People", "Set Nominal", "Finish"];
 
@@ -30,68 +31,33 @@ const buildDetailPath = (receiver) => {
 function Transfer() {
   usePageTitle("Transfer");
   const toggleSpinner = useLoadSpinner();
+  const dispatch = useDispatch();
   const { user } = useSelector((state) => state.userLogin);
+  const receiverState = useSelector((state) => state.transaction.receivers);
   const [search, setSearch] = useState("");
   const receiverRequestKey = user?.token ? `${user.token}:${search}` : "";
-  const [receiverState, setReceiverState] = useState({
-    key: "",
-    items: [],
-    error: "",
-  });
 
   useEffect(() => {
     if (!user?.token) {
       return;
     }
 
-    const controller = new AbortController();
-    let isCurrent = true;
-
-    api
-      .get("/transaction/transfer/receivers", {
-        params: {
-          search,
-          page: 1,
-          limit: 20,
-        },
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${user.token}`,
-        },
-      })
-      .then((response) => {
-        if (!isCurrent) {
-          return;
-        }
-
-        setReceiverState({
-          key: receiverRequestKey,
-          items: response.data?.items ?? [],
-          error: "",
-        });
-      })
-      .catch((err) => {
-        if (!isCurrent || err.name === "CanceledError") {
-          return;
-        }
-
-        setReceiverState({
-          key: receiverRequestKey,
-          items: [],
-          error: err.data?.message || "Failed to load receivers.",
-        });
-      });
-
-    return () => {
-      isCurrent = false;
-      controller.abort();
-    };
-  }, [receiverRequestKey, search, user?.token]);
+    dispatch(
+      fetchReceivers({
+        search,
+        page: 1,
+        limit: 20,
+        requestKey: receiverRequestKey,
+      }),
+    );
+  }, [dispatch, receiverRequestKey, search, user?.token]);
 
   const receivers = receiverState.items;
   const isLoading =
-    Boolean(user?.token) && receiverState.key !== receiverRequestKey;
-  const error = receiverState.error;
+    Boolean(user?.token) &&
+    (receiverState.status === "loading" ||
+      receiverState.requestKey !== receiverRequestKey);
+  const error = receiverState.status === "failed" ? receiverState.error : "";
 
   return (
     <main className="page-main md:col-span-1 lg:col-span-2">

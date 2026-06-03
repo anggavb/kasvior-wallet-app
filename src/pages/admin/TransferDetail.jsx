@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
 import { TransferIcon } from "@components/atoms/icons";
@@ -13,7 +13,10 @@ import { usePageTitle } from "@hooks";
 import { profile } from "@/assets/images";
 import { Button } from "@components/atoms/";
 import { PageHeader, Stepper } from "@components/molecules";
-import { api, getApiAssetUrl } from "@utils";
+import { getApiAssetUrl } from "@utils";
+import { fetchWallet } from "@redux/slices/account";
+import { createTransfer } from "@redux/slices/transaction";
+import { getThunkErrorMessage } from "@redux/api";
 
 const TRANSFER_STEPS = ["Find People", "Set Nominal", "Finish"];
 
@@ -22,10 +25,10 @@ function TransferDetail() {
   const [transferFailedModal, setTransferFailedModal] = useState(false);
   const [transferSuccessModal, setTransferSuccessModal] = useState(false);
   const [formTransfer, setFormTransfer] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   usePageTitle("Transfer Detail");
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   const {
     register,
@@ -35,6 +38,18 @@ function TransferDetail() {
 
   const [searchParams] = useSearchParams();
   const { user } = useSelector((state) => state.userLogin);
+  const { wallet } = useSelector((state) => state.account);
+  const transferStatus = useSelector(
+    (state) => state.transaction.transferCreate.status,
+  );
+  const isSubmitting = transferStatus === "loading";
+  const walletBalance = wallet.data?.balance ?? user?.balance;
+
+  useEffect(() => {
+    if (user?.token) {
+      dispatch(fetchWallet());
+    }
+  }, [dispatch, user?.token]);
 
   const transferTo = {
     walletId: searchParams.get("walletId") ?? "",
@@ -57,24 +72,16 @@ function TransferDetail() {
     const amount = Number(data.amount || 0);
     const notes = data.notes?.trim() || null;
 
-    setIsSubmitting(true);
-
     try {
-      const response = await api.post(
-        "/transaction/transfer",
-        {
-          recipient_wallet_id: transferTo.walletId,
+      const response = await dispatch(
+        createTransfer({
+          recipientWalletId: transferTo.walletId,
           amount,
           notes,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${user.token}`,
-          },
-        },
-      );
+        }),
+      ).unwrap();
 
-      const transactionId = response.data?.transaction_id;
+      const transactionId = response.transaction_id || response.transactionId;
       if (!transactionId) {
         throw new Error("Missing transaction id");
       }
@@ -89,9 +96,7 @@ function TransferDetail() {
       });
       setPinModal(true);
     } catch (err) {
-      toast.error(err.data?.message || "Transfer failed to start.");
-    } finally {
-      setIsSubmitting(false);
+      toast.error(getThunkErrorMessage(err, "Transfer failed to start."));
     }
   };
 
@@ -172,12 +177,12 @@ function TransferDetail() {
                     message: "Amount must be greater than 0",
                   },
                   validate: (value) => {
-                    if (user?.balance == null) {
+                    if (walletBalance == null) {
                       return true;
                     }
 
                     return (
-                      Number(user.balance) >= Number(value) ||
+                      Number(walletBalance) >= Number(value) ||
                       "Insufficient balance"
                     );
                   },

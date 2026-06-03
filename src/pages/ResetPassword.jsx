@@ -1,6 +1,7 @@
 import { toast } from "react-toastify";
 import { useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
+import { useDispatch, useSelector } from "react-redux";
 
 import { AuthMiddleLayout } from "@components/templates";
 import { AuthHeader } from "@components/organisms";
@@ -8,11 +9,15 @@ import { InputField } from "@components/molecules";
 import { Button } from "@components/atoms";
 import { PasswordIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
-import api from "@utils/axios";
+import { resetPassword } from "@redux/slices/userLogin";
+import { getThunkErrorMessage } from "@redux/api";
 
 const ResetPassword = () => {
   usePageTitle("Reset Password");
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { status } = useSelector((state) => state.userLogin);
+  const isSubmitting = status === "loading";
   const [searchParams] = useSearchParams();
   const resetToken = searchParams.get("token");
   const hasResetToken = Boolean(resetToken);
@@ -32,15 +37,12 @@ const ResetPassword = () => {
     }
 
     try {
-      await api.post(
-        "/auth/reset-password",
-        { new_password: form.newPassword },
-        {
-          headers: {
-            "X-Reset-Token": resetToken,
-          },
-        },
-      );
+      await dispatch(
+        resetPassword({
+          newPassword: form.newPassword,
+          resetToken,
+        }),
+      ).unwrap();
 
       reset();
       toast.success("Password has been reset successfully!");
@@ -48,7 +50,7 @@ const ResetPassword = () => {
         navigate("/login", { replace: true });
       }, 1500);
     } catch (error) {
-      toast.error(error.data?.message || "Failed to reset password");
+      toast.error(getThunkErrorMessage(error, "Failed to reset password"));
     }
   };
 
@@ -109,8 +111,8 @@ const ResetPassword = () => {
           </p>
         )}
 
-        <Button type="submit" disabled={!hasResetToken}>
-          Submit
+        <Button type="submit" disabled={!hasResetToken || isSubmitting}>
+          {isSubmitting ? "Submitting..." : "Submit"}
         </Button>
       </form>
 

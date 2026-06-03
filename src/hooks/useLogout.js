@@ -1,16 +1,14 @@
 import { useCallback } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 
-import { userLoginAction } from "@redux/slices/userLogin";
+import { logoutUser } from "@redux/slices/userLogin";
 import useLogoutStore from "@zustand/store";
-import { api } from "@utils";
 
 const useLogout = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { user } = useSelector((state) => state.userLogin);
   const {
     modalLogout,
     toggleModalLogout,
@@ -25,21 +23,9 @@ const useLogout = () => {
     setHandleConfirm(async () => {
       toggleModalLogout();
 
-      try {
-        if (user?.token) {
-          await api.delete("/auth/logout", {
-            headers: {
-              Authorization: `Bearer ${user.token}`,
-            },
-          });
-        }
-      } catch {
-        // Backend logout failure should not keep the user trapped locally.
-      } finally {
-        dispatch(userLoginAction.logout());
-        navigate("/", { replace: true });
-        toast.info("Come back soon!");
-      }
+      await dispatch(logoutUser());
+      navigate("/", { replace: true });
+      toast.info("Come back soon!");
     });
 
     if (!modalLogout) {
@@ -53,7 +39,6 @@ const useLogout = () => {
     navigate,
     setHandleConfirm,
     toggleModalLogout,
-    user?.token,
   ]);
 
   return requestLogout;

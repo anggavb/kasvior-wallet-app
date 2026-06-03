@@ -7,16 +7,17 @@ import { PinInput } from "@components/molecules";
 import { ProfileIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
 
-import { userLoginAction } from "@redux/slices/userLogin";
-import { api } from "@utils";
+import { updatePin } from "@redux/slices/account";
+import { getThunkErrorMessage } from "@redux/api";
 
 function ProfileChangePin() {
   usePageTitle("Change Pin");
   const [pin, setPin] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
+  const { status } = useSelector((state) => state.account.pin);
+  const isSubmitting = status === "loading";
 
   const handlePinChange = (pinChange) => {
     setPin(pinChange);
@@ -36,28 +37,13 @@ function ProfileChangePin() {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      await api.patch(
-        "/users/me/pin",
-        { pin },
-        {
-          headers: {
-            Authorization: `Bearer ${userLoggedIn.token}`,
-          },
-        },
-      );
-
-      dispatch(userLoginAction.updated({ hasPin: true }));
+      await dispatch(updatePin({ pin })).unwrap();
       toast.success("Pin set successfully!");
       setPin("");
       navigate("/admin/profile", { replace: true });
     } catch (error) {
-      const responseData = error.response?.data || error.data;
-      toast.error(responseData?.message || "Failed to update pin");
-    } finally {
-      setIsSubmitting(false);
+      toast.error(getThunkErrorMessage(error, "Failed to update pin"));
     }
   };
   return (
