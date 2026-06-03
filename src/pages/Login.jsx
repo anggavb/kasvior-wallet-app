@@ -39,7 +39,7 @@ const Login = () => {
           email: data.email,
           password: data.password,
         }),
-      );
+      ).unwrap();
 
       if (!loggedInUser.hasPin) {
         navigate("/enter-pin", { replace: true });

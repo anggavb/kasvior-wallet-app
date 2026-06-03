@@ -78,7 +78,6 @@ export const loginUser = createAsyncThunk(
       const response = await api.post("/auth", { email, password });
       return normalizeAuthUser(response.data);
     } catch (error) {
-      console.error("Login error:", error);
       return rejectWithMessage(
         rejectWithValue,
         error,
@@ -166,6 +165,11 @@ const setRejected = (state, { payload, error }) => {
   state.error = payload || error.message;
 };
 
+const setLoginRejected = (state, action) => {
+  setRejected(state, action);
+  state.user = null;
+};
+
 const userLoginSlice = createSlice({
   name: "login",
   initialState,
@@ -193,7 +197,7 @@ const userLoginSlice = createSlice({
         state.error = null;
         state.user = sanitizeUser(payload);
       })
-      .addCase(loginUser.rejected, setRejected)
+      .addCase(loginUser.rejected, setLoginRejected)
       .addCase(registerUser.pending, setLoading)
       .addCase(registerUser.fulfilled, (state) => {
         state.status = "succeeded";
