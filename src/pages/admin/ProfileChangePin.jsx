@@ -7,21 +7,30 @@ import { PinInput } from "@components/molecules";
 import { ProfileIcon } from "@components/atoms/icons";
 import { usePageTitle } from "@hooks";
 
-import { updatePin } from "@redux/slices/account";
+import { checkPin, updatePin } from "@redux/slices/account";
 import { getThunkErrorMessage } from "@redux/api";
 
 function ProfileChangePin() {
   usePageTitle("Change Pin");
-  const [pin, setPin] = useState("");
+  const [step, setStep] = useState("verify");
+  const [existingPin, setExistingPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { user: userLoggedIn } = useSelector((state) => state.userLogin);
-  const { status } = useSelector((state) => state.account.pin);
-  const isSubmitting = status === "loading";
-
-  const handlePinChange = (pinChange) => {
-    setPin(pinChange);
-  };
+  const { status: pinUpdateStatus } = useSelector((state) => state.account.pin);
+  const { status: pinCheckStatus } = useSelector((state) => state.account.pinCheck);
+  const isChecking = pinCheckStatus === "loading";
+  const isSubmitting = pinUpdateStatus === "loading";
+  const isVerifyStep = step === "verify";
+  const submitLabel = isVerifyStep
+    ? isChecking
+      ? "Checking..."
+      : "Continue"
+    : isSubmitting
+      ? "Submitting..."
+      : "Submit";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,15 +41,46 @@ function ProfileChangePin() {
       return;
     }
 
-    if (!/^\d{6}$/.test(pin)) {
+    if (isVerifyStep) {
+      if (!/^\d{6}$/.test(existingPin)) {
+        toast.error("Pin must be 6 digits long");
+        return;
+      }
+
+      try {
+        await dispatch(checkPin({ pin: existingPin })).unwrap();
+        setStep("change");
+        setNewPin("");
+        setConfirmPin("");
+      } catch {
+        toast.error("Existing PIN is incorrect");
+      }
+
+      return;
+    }
+
+    if (!/^\d{6}$/.test(newPin)) {
       toast.error("Pin must be 6 digits long");
       return;
     }
 
+    if (!/^\d{6}$/.test(confirmPin)) {
+      toast.error("Confirm pin must be 6 digits long");
+      return;
+    }
+
+    if (newPin !== confirmPin) {
+      toast.error("Confirm pin does not match");
+      return;
+    }
+
     try {
-      await dispatch(updatePin({ pin })).unwrap();
+      await dispatch(updatePin({ pin: newPin })).unwrap();
       toast.success("Pin set successfully!");
-      setPin("");
+      setExistingPin("");
+      setNewPin("");
+      setConfirmPin("");
+      setStep("verify");
       navigate("/admin/profile", { replace: true });
     } catch (error) {
       toast.error(getThunkErrorMessage(error, "Failed to update pin"));
@@ -67,10 +107,50 @@ function ProfileChangePin() {
           </div>
 
           <form className="flex flex-col mt-4" onSubmit={handleSubmit}>
-            <PinInput length={6} callbackForm={handlePinChange} />
+            {isVerifyStep ? (
+              <div>
+                <p className="text-sm font-medium text-neutral-700">
+                  Existing PIN
+                </p>
+                <PinInput
+                  length={6}
+                  value={existingPin}
+                  callbackForm={setExistingPin}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-neutral-700">
+                    New PIN
+                  </p>
+                  <PinInput
+                    length={6}
+                    value={newPin}
+                    callbackForm={setNewPin}
+                  />
+                </div>
 
-            <Button type="submit" className="w-full p-4" disabled={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Submit"}
+                <div>
+                  <p className="text-sm font-medium text-neutral-700">
+                    Confirm New PIN
+                  </p>
+                  <PinInput
+                    length={6}
+                    value={confirmPin}
+                    autoFocus={false}
+                    callbackForm={setConfirmPin}
+                  />
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full p-4"
+              disabled={isChecking || isSubmitting}
+            >
+              {submitLabel}
             </Button>
           </form>
         </div>

@@ -21,6 +21,9 @@ const initialState = {
   pin: {
     ...initialAsyncState,
   },
+  pinCheck: {
+    ...initialAsyncState,
+  },
   wallet: {
     data: null,
     ...initialAsyncState,
@@ -130,6 +133,23 @@ export const updatePin = createAsyncThunk(
   },
 );
 
+export const checkPin = createAsyncThunk(
+  "account/checkPin",
+  async ({ pin }, { getState, rejectWithValue }) => {
+    try {
+      const response = await api.post(
+        "/users/me/pin/check",
+        { pin },
+        makeAuthConfig(getState),
+      );
+
+      return response.data;
+    } catch (error) {
+      return rejectWithMessage(rejectWithValue, error, "Failed to check pin.");
+    }
+  },
+);
+
 export const fetchWallet = createAsyncThunk(
   "account/fetchWallet",
   async (_, { getState, rejectWithValue }) => {
@@ -230,6 +250,17 @@ const accountSlice = createSlice({
       .addCase(updatePin.rejected, (state, { payload, error }) => {
         state.pin.status = "failed";
         state.pin.error = payload || error.message;
+      })
+      .addCase(checkPin.pending, (state) => {
+        state.pinCheck.status = "loading";
+        state.pinCheck.error = null;
+      })
+      .addCase(checkPin.fulfilled, (state) => {
+        state.pinCheck.status = "succeeded";
+      })
+      .addCase(checkPin.rejected, (state, { payload, error }) => {
+        state.pinCheck.status = "failed";
+        state.pinCheck.error = payload || error.message;
       })
       .addCase(fetchWallet.pending, (state) => {
         state.wallet.status = "loading";
