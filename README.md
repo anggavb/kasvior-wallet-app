@@ -113,6 +113,7 @@ npm run preview
 
 ## Project Structure
 
+This project follows a Atomic Design pattern, separating concerns into different layers. You can read more about it [here](https://atomicdesign.bradfrost.com/). The main directories are:
 ```bash
 .
 ├── public/                 # Static assets
